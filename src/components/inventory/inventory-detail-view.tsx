@@ -1,65 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/login-form";
-import { SessionStatus } from "@/components/auth/session-status";
 import { StatusBadge } from "@/components/inventory/status-badge";
+import { CollectionNav } from "@/components/navigation/collection-nav";
 import { DetailGrid } from "@/components/ui/detail-grid";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getInventoryItemByItemId } from "@/lib/data/inventory";
 import { formatValue, getDisplayImage, normalizeTravelFriendly } from "@/lib/inventory";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
 
-const supabase = getSupabaseBrowserClient();
-
 export function InventoryDetailView({ itemId }: { itemId: string }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
   const [item, setItem] = useState<InventoryItem | null>(null);
-  const [isSessionLoading, setIsSessionLoading] = useState(true);
   const [isItemLoading, setIsItemLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-
-  useEffect(() => {
-    let isActive = true;
-
-    async function bootstrapSession() {
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession();
-
-      if (isActive) {
-        setSession(currentSession);
-        setIsSessionLoading(false);
-      }
-    }
-
-    void bootstrapSession();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (!isActive) {
-        return;
-      }
-
-      setSession(nextSession);
-      setErrorMessage("");
-
-      if (!nextSession) {
-        setItem(null);
-      }
-    });
-
-    return () => {
-      isActive = false;
-      subscription.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -96,34 +55,12 @@ export function InventoryDetailView({ itemId }: { itemId: string }) {
     return () => {
       isActive = false;
     };
-  }, [itemId, session]);
-
-  async function handleLogin(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      throw new Error(
-        error.message.toLowerCase().includes("invalid login credentials")
-          ? "Incorrect email or password. Check your login details and try again."
-          : error.message,
-      );
-    }
-  }
-
-  async function handleLogout() {
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-  }
+  }, [itemId, session, supabase]);
 
   if (isSessionLoading) {
     return (
       <main className="page-shell">
+        <CollectionNav />
         <section className="setup-notice">
           <p className="eyebrow">Loading</p>
           <h1>Checking your wardrobe session</h1>
@@ -140,6 +77,7 @@ export function InventoryDetailView({ itemId }: { itemId: string }) {
   if (isItemLoading) {
     return (
       <main className="page-shell">
+        <CollectionNav />
         <section className="setup-notice">
           <p className="eyebrow">Loading</p>
           <h1>Fetching item details</h1>
@@ -152,6 +90,7 @@ export function InventoryDetailView({ itemId }: { itemId: string }) {
   if (errorMessage) {
     return (
       <main className="page-shell">
+        <CollectionNav />
         <section className="dashboard">
           <EmptyState title="Could not load item" description={errorMessage} />
         </section>
@@ -162,6 +101,7 @@ export function InventoryDetailView({ itemId }: { itemId: string }) {
   if (!item) {
     return (
       <main className="page-shell">
+        <CollectionNav />
         <section className="dashboard">
           <EmptyState
             title="Item not found"
@@ -190,12 +130,12 @@ export function InventoryDetailView({ itemId }: { itemId: string }) {
 
   return (
     <main className="page-shell">
+      <CollectionNav />
       <div className="detail-header">
         <div className="detail-topbar">
-          <Link className="back-link" href="/">
+          <Link className="back-link" href="/wardrobe">
             Back to wardrobe
           </Link>
-          <SessionStatus email={session.user.email ?? "Signed-in user"} onLogout={handleLogout} />
         </div>
         <div className="detail-title-row">
           <div className="detail-title-copy">

@@ -16,4 +16,15 @@ The `database/` folder documents the Supabase wardrobe database used by this app
 
 - The application connects directly to your existing Supabase project
 - The app currently reads from the `inventory` table for wardrobe inventory
-- Additional tables such as `outfits` and `packs` are present in the repository only as reference for future phases and are not used in Phase 1
+- The `outfits` table is used for Phase 2 read-only lookbooks, linked to wardrobe `item_id` values in the application layer
+- Additional tables such as `packs` remain reference-only for future phases
+
+## Future Outfit Linking Notes
+
+- `BAG_002` = Beige woven beach bag
+- `BAG_001` = Black Pearl Drawstring Bag
+- `SHOE_001` = White Square Toe Flip Flops, not gold sandals
+- Gold flat sandals are not owned and belong in future Gap Analysis / To Get only
+- `TOP_051` should be treated as a cover-up option
+- `COVERUP_001` can be used as a bottom option
+- `HAIR_003` Whitney should be the default hair for holiday lookbooks

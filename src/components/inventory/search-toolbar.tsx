@@ -1,3 +1,7 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
 import type { InventoryFilters } from "@/types/inventory";
 
 type SearchToolbarProps = {
@@ -21,12 +25,38 @@ export function SearchToolbar({
   resultCount,
   onChange,
 }: SearchToolbarProps) {
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const activeFilterCount = useMemo(
+    () =>
+      [
+        filters.category,
+        filters.status,
+        filters.season,
+        filters.style_type,
+        filters.travel_friendly,
+      ].filter(Boolean).length,
+    [filters],
+  );
+
   return (
     <div className="toolbar-grid">
-      <div className="search-panel">
-        <label className="search-label" htmlFor="inventory-search">
-          Discover by name, SKU, colour, category, tags, or vibe
-        </label>
+      <div className="search-panel search-panel-compact">
+        <div className="search-panel-header">
+          <label className="search-label" htmlFor="inventory-search">
+            Discover by name, SKU, colour, category, tags, or vibe
+          </label>
+
+          <button
+            className={`filter-toggle ${isFiltersOpen ? "is-open" : ""}`}
+            type="button"
+            onClick={() => setIsFiltersOpen((value) => !value)}
+            aria-expanded={isFiltersOpen}
+          >
+            Filters
+            {activeFilterCount ? <span className="filter-toggle-count">{activeFilterCount}</span> : null}
+          </button>
+        </div>
+
         <input
           id="inventory-search"
           className="search-input"
@@ -42,7 +72,7 @@ export function SearchToolbar({
         />
       </div>
 
-      <div className="filter-grid editorial-filter-grid">
+      <div className={`filter-grid editorial-filter-grid ${isFiltersOpen ? "is-open" : "is-collapsed"}`}>
         <FilterSelect
           label={`Category (${filterOptions.categories.length})`}
           value={filters.category}
@@ -75,7 +105,7 @@ export function SearchToolbar({
         />
       </div>
 
-      <div className="results-bar">
+      <div className="results-bar toolbar-results">
         <p>
           Browse {resultCount} results from {totalCount} pieces.
         </p>

@@ -126,16 +126,6 @@ export function InventoryDashboard({ items }: InventoryDashboardProps) {
         />
       ) : (
         <>
-          <PaginationControls
-            currentPage={currentPage}
-            pageSize={pageSize}
-            totalItems={filteredItems.length}
-            totalPages={totalPages}
-            currentRange={currentRange}
-            onPageChange={handlePageChange}
-            onPageSizeChange={handlePageSizeChange}
-          />
-
           <div className="inventory-grid">
             {paginatedItems.map((item) => (
               <InventoryCard key={item.id} item={item} />
