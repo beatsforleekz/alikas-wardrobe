@@ -7,6 +7,7 @@ const navItems = [
   { href: "/", label: "Home", subtle: true },
   { href: "/wardrobe", label: "Wardrobe" },
   { href: "/outfits", label: "Lookbooks" },
+  { href: "/catalogue", label: "Catalogue" },
 ];
 
 export function CollectionNav() {
@@ -35,11 +36,11 @@ export function CollectionNav() {
         })}
       </nav>
 
-      <button
+      <Link
+        href="/catalogue"
         className="settings-button"
-        type="button"
-        aria-label="Settings coming soon"
-        title="Settings coming soon"
+        aria-label="Catalogue access"
+        title="Catalogue"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true" className="settings-icon">
           <path
@@ -56,7 +57,7 @@ export function CollectionNav() {
             strokeLinejoin="round"
           />
         </svg>
-      </button>
+      </Link>
     </div>
   );
 }

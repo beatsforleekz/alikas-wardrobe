@@ -19,6 +19,31 @@ export type InventoryItem = {
   tags: string | null;
 };
 
+export type InventoryItemInput = {
+  item_id: string;
+  category: string;
+  item_name: string;
+  colour: string;
+  status: string;
+  silhouette: string;
+  vibe: string;
+  shoot_level: string;
+  travel_friendly: string;
+  notes: string;
+  set_name: string;
+  season: string;
+  image: string;
+  style_type: string;
+  tags: string;
+};
+
+export type InventoryBulkActionInput =
+  | { type: "archive" }
+  | { type: "restore" }
+  | { type: "status"; value: string }
+  | { type: "category"; value: string }
+  | { type: "tags"; value: string };
+
 export type InventoryFilters = {
   query: string;
   category: string;

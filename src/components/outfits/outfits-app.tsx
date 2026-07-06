@@ -4,22 +4,31 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { CollectionNav } from "@/components/navigation/collection-nav";
+import { OutfitBuilderPanel } from "@/components/outfits/outfit-builder-panel";
 import { OutfitCard } from "@/components/outfits/outfit-card";
+import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { EmptyState } from "@/components/ui/empty-state";
+import { createOutfit, deleteOutfit, getOutfits, updateOutfit } from "@/lib/data/outfits";
 import { getInventoryItems } from "@/lib/data/inventory";
-import { getOutfits } from "@/lib/data/outfits";
 import { validateOutfit } from "@/lib/outfits";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
-import type { Outfit } from "@/types/outfit";
+import type { Outfit, OutfitInput } from "@/types/outfit";
+
+const OUTFITS_VIEW_STATE_KEY = "alikas-wardrobe:outfits-view-state";
+const OUTFITS_SCROLL_KEY = "alikas-wardrobe:outfits-scroll";
 
 export function OutfitsApp() {
   const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
+  const savedState = useMemo(() => getStoredOutfitsViewState(), []);
   const [outfits, setOutfits] = useState<Outfit[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(savedState?.query ?? "");
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [editingOutfit, setEditingOutfit] = useState<Outfit | null>(null);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     let isActive = true;
@@ -60,6 +69,47 @@ export function OutfitsApp() {
     };
   }, [session, supabase]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      OUTFITS_VIEW_STATE_KEY,
+      JSON.stringify({
+        query,
+      }),
+    );
+  }, [query]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const restoreScroll = () => {
+      const rawValue = window.sessionStorage.getItem(OUTFITS_SCROLL_KEY);
+      const scrollY = rawValue ? Number(rawValue) : 0;
+
+      if (Number.isFinite(scrollY) && scrollY > 0) {
+        window.scrollTo({ top: scrollY, behavior: "auto" });
+      }
+    };
+
+    const animationFrame = window.requestAnimationFrame(restoreScroll);
+    const handleScroll = () => {
+      window.sessionStorage.setItem(OUTFITS_SCROLL_KEY, `${window.scrollY}`);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      handleScroll();
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
   const validatedOutfits = useMemo(
     () => outfits.map((outfit) => validateOutfit(outfit, inventoryItems)),
     [inventoryItems, outfits],
@@ -75,6 +125,7 @@ export function OutfitsApp() {
       const fields = [
         entry.outfit.title,
         entry.outfit.occasion,
+        entry.outfit.trip,
         entry.outfit.capsule,
         entry.outfit.item_ids.join(" "),
         entry.outfit.tags.join(" "),
@@ -84,8 +135,37 @@ export function OutfitsApp() {
     });
   }, [query, validatedOutfits]);
 
+  async function handleSaveOutfit(input: OutfitInput, currentId?: string) {
+    if (!session) {
+      return;
+    }
+
+    if (currentId) {
+      const updated = await updateOutfit(supabase, currentId, input);
+      setOutfits((current) =>
+        current
+          .map((outfit) => (outfit.id === currentId ? updated : outfit))
+          .sort((left, right) => (right.created_at ?? "").localeCompare(left.created_at ?? "")),
+      );
+      setNotice(`${updated.title} updated.`);
+      return;
+    }
+
+    const created = await createOutfit(supabase, session.user.id, input);
+    setOutfits((current) =>
+      [created, ...current].sort((left, right) => (right.created_at ?? "").localeCompare(left.created_at ?? "")),
+    );
+    setNotice(`${created.title} added to lookbooks.`);
+  }
+
+  async function handleDeleteOutfit(outfitToDelete: Outfit) {
+    await deleteOutfit(supabase, outfitToDelete.id);
+    setOutfits((current) => current.filter((entry) => entry.id !== outfitToDelete.id));
+    setNotice(`${outfitToDelete.title} deleted.`);
+  }
+
   if (isSessionLoading) {
-    return <CollectionLoadingScreen title="Preparing your lookbooks" message="Checking your wardrobe session..." />;
+    return <BrandedLoadingScreen title="Preparing your lookbook" />;
   }
 
   if (!session) {
@@ -105,23 +185,34 @@ export function OutfitsApp() {
           <EmptyState title="Could not load outfits" description={errorMessage} />
         </section>
       ) : isLoading ? (
-        <CollectionLoadingScreen
-          title="Fetching lookbooks"
-          message="Loading outfits and validating their wardrobe links."
-        />
-      ) : validatedOutfits.length === 0 ? (
-        <section className="dashboard">
-          <EmptyState
-            title="No lookbooks yet"
-            description="Outfit data has not been populated in Supabase yet. Once outfits are added, they will appear here with wardrobe-link validation."
-          />
-        </section>
+        <BrandedLoadingScreen title="Preparing your lookbook" />
       ) : (
         <section className="dashboard dashboard-tight">
+          <div className="results-bar inventory-overview">
+            <div className="results-copy">
+              <p className="results-heading">Editorial outfits</p>
+              <p>
+                Showing {filteredOutfits.length} of {validatedOutfits.length} lookbooks.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                setEditingOutfit(null);
+                setBuilderOpen(true);
+              }}
+            >
+              New outfit
+            </button>
+          </div>
+
+          {notice ? <p className="inline-notice">{notice}</p> : null}
+
           <div className="dashboard-card">
             <div className="search-panel search-panel-compact">
               <label className="search-label" htmlFor="lookbook-search">
-                Search by title, occasion, capsule, tags, or linked item ID
+                Search by title, occasion, trip, tags, or linked item ID
               </label>
               <input
                 id="lookbook-search"
@@ -134,47 +225,66 @@ export function OutfitsApp() {
             </div>
           </div>
 
-          <div className="results-bar inventory-overview">
-            <div className="results-copy">
-              <p className="results-heading">Editorial outfits</p>
-              <p>
-                Showing {filteredOutfits.length} of {validatedOutfits.length} lookbooks.
-              </p>
-            </div>
-          </div>
-
-          {filteredOutfits.length === 0 ? (
+          {validatedOutfits.length === 0 ? (
+            <EmptyState
+              title="No lookbooks yet"
+              description="Create your first outfit lookbook and link it directly to your wardrobe items."
+            />
+          ) : filteredOutfits.length === 0 ? (
             <EmptyState
               title="No lookbooks match this search"
-              description="Try another outfit name, occasion, capsule, tag, or linked wardrobe item ID."
+              description="Try another outfit name, occasion, trip, tag, or linked wardrobe item ID."
             />
           ) : (
             <div className="outfits-grid">
               {filteredOutfits.map((entry) => (
-                <OutfitCard key={entry.outfit.id} entry={entry} />
+                <OutfitCard
+                  key={entry.outfit.id}
+                  entry={entry}
+                  onEdit={() => {
+                    setEditingOutfit(entry.outfit);
+                    setBuilderOpen(true);
+                  }}
+                />
               ))}
             </div>
           )}
         </section>
       )}
+
+      <OutfitBuilderPanel
+        open={builderOpen}
+        outfit={editingOutfit}
+        inventoryItems={inventoryItems}
+        onClose={() => {
+          setBuilderOpen(false);
+          setEditingOutfit(null);
+        }}
+        onSubmit={handleSaveOutfit}
+        onDelete={handleDeleteOutfit}
+      />
     </main>
   );
 }
 
-function CollectionLoadingScreen({
-  title,
-  message,
-}: {
-  title: string;
-  message: string;
-}) {
-  return (
-    <main className="page-shell">
-      <section className="setup-notice">
-        <p className="eyebrow">Loading</p>
-        <h1>{title}</h1>
-        <p>{message}</p>
-      </section>
-    </main>
-  );
+function getStoredOutfitsViewState(): { query: string } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(OUTFITS_VIEW_STATE_KEY);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as Partial<{ query: string }>;
+
+    return {
+      query: typeof parsed.query === "string" ? parsed.query : "",
+    };
+  } catch {
+    return null;
+  }
 }

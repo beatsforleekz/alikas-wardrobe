@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { InventoryDashboard } from "@/components/inventory/inventory-dashboard";
 import { CollectionNav } from "@/components/navigation/collection-nav";
+import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getInventoryItems } from "@/lib/data/inventory";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
 
 export function InventoryApp() {
-  const { supabase, session, isSessionLoading, handleLogin, handleLogout } = useWardrobeSession();
+  const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isInventoryLoading, setIsInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState("");
@@ -54,7 +56,7 @@ export function InventoryApp() {
   }, [session, supabase]);
 
   if (isSessionLoading) {
-    return <InventoryLoadingScreen message="Checking your wardrobe session..." />;
+    return <BrandedLoadingScreen title="Preparing your wardrobe" />;
   }
 
   if (!session) {
@@ -74,7 +76,7 @@ export function InventoryApp() {
           <EmptyState title="Could not load inventory" description={inventoryError} />
         </section>
       ) : isInventoryLoading ? (
-        <InventoryLoadingScreen message="Fetching inventory with your Supabase session..." />
+        <BrandedLoadingScreen title="Preparing your wardrobe" />
       ) : items.length === 0 ? (
         <section className="dashboard">
           <EmptyState
@@ -83,20 +85,13 @@ export function InventoryApp() {
           />
         </section>
       ) : (
-        <InventoryDashboard items={items} />
+        <InventoryDashboard
+          items={items}
+          supabase={supabase}
+          userId={session.user.id}
+          onItemsChange={setItems}
+        />
       )}
-    </main>
-  );
-}
-
-function InventoryLoadingScreen({ message }: { message: string }) {
-  return (
-    <main className="page-shell">
-      <section className="setup-notice">
-        <p className="eyebrow">Loading</p>
-        <h1>Preparing your wardrobe</h1>
-        <p>{message}</p>
-      </section>
     </main>
   );
 }

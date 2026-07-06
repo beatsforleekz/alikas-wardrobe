@@ -4,3 +4,10 @@ export function hasSupabaseEnv() {
   );
 }
 
+export function getCatalogueStorageBucket() {
+  return process.env.NEXT_PUBLIC_SUPABASE_CATALOGUE_BUCKET?.trim() || "";
+}
+
+export function hasCatalogueStorage() {
+  return Boolean(getCatalogueStorageBucket());
+}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import wardrobeIllustration from "../../../images/closet-drawing-vintage-furniture-illustration-vector-2K58JBJ.jpg";
 
@@ -15,15 +16,7 @@ export function HomeApp() {
   const [isEntering, setIsEntering] = useState(false);
 
   if (isSessionLoading) {
-    return (
-      <main className="page-shell">
-        <section className="setup-notice">
-          <p className="eyebrow">Loading</p>
-          <h1>Preparing your wardrobe</h1>
-          <p>Checking your wardrobe session before opening the collection.</p>
-        </section>
-      </main>
-    );
+    return <BrandedLoadingScreen title="Preparing your wardrobe" />;
   }
 
   if (!session) {

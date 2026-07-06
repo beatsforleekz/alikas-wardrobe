@@ -7,6 +7,7 @@ import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
 import { StatusBadge } from "@/components/inventory/status-badge";
 import { CollectionNav } from "@/components/navigation/collection-nav";
+import { LookbookPromptPanel } from "@/components/outfits/lookbook-prompt-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getInventoryItems } from "@/lib/data/inventory";
 import { getOutfitById } from "@/lib/data/outfits";
@@ -127,7 +128,12 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
             <h1>{validatedOutfit.outfit.title}</h1>
             <div className="detail-meta-line">
               {validatedOutfit.outfit.occasion ? <span>{validatedOutfit.outfit.occasion}</span> : null}
-              {validatedOutfit.outfit.capsule ? (
+              {validatedOutfit.outfit.trip ? (
+                <>
+                  {validatedOutfit.outfit.occasion ? <span className="meta-dot" aria-hidden="true" /> : null}
+                  <span>{validatedOutfit.outfit.trip}</span>
+                </>
+              ) : validatedOutfit.outfit.capsule ? (
                 <>
                   {validatedOutfit.outfit.occasion ? <span className="meta-dot" aria-hidden="true" /> : null}
                   <span>{validatedOutfit.outfit.capsule}</span>
@@ -190,6 +196,12 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
               <span className="detail-chip">{validatedOutfit.needsReviewCount} needs review</span>
             </div>
           </article>
+
+          <LookbookPromptPanel
+            validatedOutfit={validatedOutfit}
+            inventoryItems={inventoryItems}
+            title="Lookbook prompt"
+          />
         </div>
       </section>
 
@@ -227,16 +239,27 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
 
                     <div className="linked-item-body">
                       {itemImage ? (
-                        <div className="linked-item-image-wrap">
-                          <Image
-                            src={itemImage}
-                            alt={item?.item_name || linkedItem.itemId}
-                            fill
-                            className="linked-item-image"
-                            sizes="120px"
-                          />
+                        <a
+                          href={itemImage}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="linked-item-image-link"
+                        >
+                          <div className="linked-item-image-wrap">
+                            <Image
+                              src={itemImage}
+                              alt={item?.item_name || linkedItem.itemId}
+                              fill
+                              className="linked-item-image"
+                              sizes="120px"
+                            />
+                          </div>
+                        </a>
+                      ) : (
+                        <div className="linked-item-image-wrap linked-item-image-placeholder">
+                          <span>No image</span>
                         </div>
-                      ) : null}
+                      )}
 
                       <div className="linked-item-copy">
                         <p className="linked-item-meta">
@@ -245,9 +268,21 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
                         <p className="linked-item-meta">{linkedItem.categoryLabel}</p>
                         {linkedItem.notes ? <p className="linked-item-note">{linkedItem.notes}</p> : null}
                         {item ? (
-                          <Link className="back-link linked-item-link" href={`/items/${encodeURIComponent(item.item_id)}`}>
-                            View wardrobe item
-                          </Link>
+                          <div className="linked-item-actions">
+                            <Link className="back-link linked-item-link" href={`/items/${encodeURIComponent(item.item_id)}`}>
+                              View wardrobe item
+                            </Link>
+                            {itemImage ? (
+                              <a
+                                className="back-link linked-item-link"
+                                href={itemImage}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Open image
+                              </a>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     </div>
@@ -271,7 +306,6 @@ function OutfitLoadingScreen({
 }) {
   return (
     <main className="page-shell">
-      <CollectionNav />
       <section className="setup-notice">
         <p className="eyebrow">Loading</p>
         <h1>{title}</h1>
