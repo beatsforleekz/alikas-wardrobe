@@ -8,9 +8,7 @@ import { LookbookPromptPanel } from "@/components/outfits/lookbook-prompt-panel"
 import {
   buildValidatedOutfitFromInput,
   EMPTY_OUTFIT_INPUT,
-  groupOutfitItems,
   normalizeOutfitInput,
-  OUTFIT_GROUP_LABELS,
   validateOutfitInput,
 } from "@/lib/outfits";
 import { filterInventoryItems, getDisplayImage } from "@/lib/inventory";
@@ -32,6 +30,33 @@ const requiredStudioGroups = [
   "Shoes",
   "Bag",
 ] as const;
+
+const STUDIO_SECTION_ORDER = [
+  "Hair",
+  "Hat",
+  "Dress",
+  "One Piece",
+  "Top",
+  "Bodysuit",
+  "Bottom",
+  "Skirt",
+  "Shorts",
+  "Swimwear",
+  "Cover Up",
+  "Outerwear",
+  "Shoes",
+  "Bag",
+  "Sunglasses",
+  "Accessories",
+] as const;
+
+type StudioSectionLabel = (typeof STUDIO_SECTION_ORDER)[number];
+
+type BoardSection = {
+  groupLabel: StudioSectionLabel;
+  items: OutfitLinkedItem[];
+  isManual: boolean;
+};
 
 type OutfitBuilderPanelProps = {
   open: boolean;
@@ -57,6 +82,9 @@ export function OutfitBuilderPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [draggedBoardItemId, setDraggedBoardItemId] = useState<string | null>(null);
   const [draggedBrowserItemId, setDraggedBrowserItemId] = useState<string | null>(null);
+  const [sectionOrder, setSectionOrder] = useState<StudioSectionLabel[]>([]);
+  const [manualSections, setManualSections] = useState<StudioSectionLabel[]>([]);
+  const [pendingSection, setPendingSection] = useState<StudioSectionLabel | "">("");
 
   useEffect(() => {
     if (open) {
@@ -66,8 +94,14 @@ export function OutfitBuilderPanel({
       setErrors([]);
       setDraggedBoardItemId(null);
       setDraggedBrowserItemId(null);
+      const initialSections = getOrderedSections(
+        getVisibleSections(buildValidatedOutfitFromInput(outfit ? normalizeOutfitInput(outfit) : EMPTY_OUTFIT_INPUT, inventoryItems).linkedItems),
+      );
+      setSectionOrder(initialSections);
+      setManualSections([]);
+      setPendingSection(getFirstAvailableSection(initialSections));
     }
-  }, [open, outfit]);
+  }, [open, outfit, inventoryItems]);
 
   const categoryOptions = useMemo(
     () =>
@@ -92,18 +126,49 @@ export function OutfitBuilderPanel({
     [draft, inventoryItems],
   );
 
-  const groupedBoardItems = useMemo(() => {
-    const grouped = groupOutfitItems(validatedDraftOutfit.linkedItems);
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
 
-    return OUTFIT_GROUP_LABELS.map((groupLabel) => ({
+    const sectionsWithItems = getVisibleSections(validatedDraftOutfit.linkedItems);
+
+    setSectionOrder((current) => {
+      const visible = current.filter(
+        (section) => sectionsWithItems.includes(section) || manualSections.includes(section),
+      );
+      const combined = sectionsWithItems.reduce(
+        (orderedSections, section) => insertSectionInDefaultPosition(orderedSections, section),
+        visible,
+      );
+      return areSectionsEqual(current, combined) ? current : combined;
+    });
+
+    setManualSections((current) => {
+      const nextManualSections = current.filter((section) => !sectionsWithItems.includes(section));
+      return areSectionsEqual(current, nextManualSections) ? current : nextManualSections;
+    });
+  }, [open, validatedDraftOutfit.linkedItems, manualSections]);
+
+  const groupedBoardItems = useMemo<BoardSection[]>(() => {
+    const itemsBySection = new Map<StudioSectionLabel, OutfitLinkedItem[]>();
+
+    validatedDraftOutfit.linkedItems.forEach((linkedItem) => {
+      const groupLabel = getStudioSectionLabel(linkedItem);
+      const currentItems = itemsBySection.get(groupLabel) ?? [];
+      currentItems.push(linkedItem);
+      itemsBySection.set(groupLabel, currentItems);
+    });
+
+    return sectionOrder.map((groupLabel) => ({
       groupLabel,
-      items: grouped.find((group) => group.groupLabel === groupLabel)?.items ?? [],
+      items: itemsBySection.get(groupLabel) ?? [],
+      isManual: manualSections.includes(groupLabel),
     }));
-  }, [validatedDraftOutfit.linkedItems]);
+  }, [manualSections, sectionOrder, validatedDraftOutfit.linkedItems]);
 
   const categoriesUsed = useMemo(
-    () =>
-      [...new Set(validatedDraftOutfit.linkedItems.map((item) => item.groupLabel))].filter(Boolean),
+    () => getVisibleSections(validatedDraftOutfit.linkedItems),
     [validatedDraftOutfit.linkedItems],
   );
 
@@ -113,9 +178,24 @@ export function OutfitBuilderPanel({
   );
 
   const hairSelected = useMemo(
-    () => validatedDraftOutfit.linkedItems.some((item) => item.groupLabel === "Hair"),
-    [validatedDraftOutfit.linkedItems],
+    () => categoriesUsed.includes("Hair"),
+    [categoriesUsed],
   );
+
+  const availableSections = useMemo(
+    () => STUDIO_SECTION_ORDER.filter((section) => !sectionOrder.includes(section)),
+    [sectionOrder],
+  );
+
+  useEffect(() => {
+    setPendingSection((current) => {
+      if (current && availableSections.includes(current)) {
+        return current;
+      }
+
+      return getFirstAvailableSection(sectionOrder);
+    });
+  }, [availableSections, sectionOrder]);
 
   const lookbookStatus = useMemo(() => {
     if (validatedDraftOutfit.linkedItemCount === 0) {
@@ -156,11 +236,18 @@ export function OutfitBuilderPanel({
   }
 
   function addItem(itemId: string) {
+    const inventoryItem = inventoryItems.find((item) => item.item_id === itemId) ?? null;
+    const targetSection = getStudioSectionLabelFromInventory(inventoryItem);
+
     setDraft((current) =>
       current.item_ids.includes(itemId)
         ? current
         : { ...current, item_ids: [...current.item_ids, itemId] },
     );
+    setSectionOrder((current) =>
+      current.includes(targetSection) ? current : insertSectionInDefaultPosition(current, targetSection),
+    );
+    setManualSections((current) => current.filter((section) => section !== targetSection));
   }
 
   function removeItem(itemId: string) {
@@ -227,6 +314,36 @@ export function OutfitBuilderPanel({
 
     setDraggedBrowserItemId(null);
     setDraggedBoardItemId(null);
+  }
+
+  function addSection(section: StudioSectionLabel) {
+    setSectionOrder((current) => insertSectionInDefaultPosition(current, section));
+    setManualSections((current) => (current.includes(section) ? current : [...current, section]));
+  }
+
+  function moveSection(section: StudioSectionLabel, direction: -1 | 1) {
+    setSectionOrder((current) => {
+      const index = current.indexOf(section);
+
+      if (index < 0) {
+        return current;
+      }
+
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) {
+        return current;
+      }
+
+      const nextSections = [...current];
+      const [moved] = nextSections.splice(index, 1);
+      nextSections.splice(nextIndex, 0, moved);
+      return nextSections;
+    });
+  }
+
+  function removeSection(section: StudioSectionLabel) {
+    setSectionOrder((current) => current.filter((entry) => entry !== section));
+    setManualSections((current) => current.filter((entry) => entry !== section));
   }
 
   async function handleDelete() {
@@ -369,9 +486,43 @@ export function OutfitBuilderPanel({
                 <p className="results-heading">Outfit board</p>
                 <p>Arrange the look visually, reorder gently, and remove pieces as you style.</p>
               </div>
+              <div className="studio-board-toolbar">
+                <label className="studio-section-picker">
+                  <span>Add section</span>
+                  <div className="studio-section-picker-row">
+                    <select
+                      className="filter-select"
+                      value={pendingSection}
+                      onChange={(event) => setPendingSection(event.target.value as StudioSectionLabel | "")}
+                      disabled={availableSections.length === 0}
+                    >
+                      {availableSections.length === 0 ? (
+                        <option value="">All sections added</option>
+                      ) : null}
+                      {availableSections.map((section) => (
+                        <option key={section} value={section}>
+                          {section}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="ghost-button studio-mini-button"
+                      disabled={!pendingSection}
+                      onClick={() => {
+                        if (pendingSection) {
+                          addSection(pendingSection);
+                        }
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </label>
+              </div>
             </div>
 
-            {validatedDraftOutfit.linkedItemCount === 0 ? (
+            {groupedBoardItems.length === 0 ? (
               <div className="studio-board-empty">
                 <div className="studio-board-empty-mark" aria-hidden="true" />
                 <p className="results-heading">Start building your look.</p>
@@ -382,14 +533,48 @@ export function OutfitBuilderPanel({
                 {groupedBoardItems.map((group) => (
                   <section className="studio-board-group" key={group.groupLabel}>
                     <div className="studio-board-group-head">
-                      <h2>{group.groupLabel}</h2>
-                      <span className="sku-label">
-                        {group.items.length} item{group.items.length === 1 ? "" : "s"}
-                      </span>
+                      <div className="studio-board-group-copy">
+                        <h2>{group.groupLabel}</h2>
+                        <span className="sku-label">
+                          {group.items.length} item{group.items.length === 1 ? "" : "s"}
+                        </span>
+                        {group.isManual && group.items.length === 0 ? (
+                          <span className="sku-label">Added manually</span>
+                        ) : null}
+                      </div>
+                      <div className="studio-board-group-actions">
+                        <button
+                          type="button"
+                          className="ghost-button studio-mini-button"
+                          onClick={() => moveSection(group.groupLabel, -1)}
+                          disabled={sectionOrder.indexOf(group.groupLabel) === 0}
+                        >
+                          Up
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button studio-mini-button"
+                          onClick={() => moveSection(group.groupLabel, 1)}
+                          disabled={sectionOrder.indexOf(group.groupLabel) === sectionOrder.length - 1}
+                        >
+                          Down
+                        </button>
+                        {group.items.length === 0 ? (
+                          <button
+                            type="button"
+                            className="ghost-button studio-mini-button"
+                            onClick={() => removeSection(group.groupLabel)}
+                          >
+                            Remove section
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
 
                     {group.items.length === 0 ? (
-                      <div className="studio-board-group-empty">No {group.groupLabel.toLowerCase()} selected.</div>
+                      <div className="studio-board-group-empty">
+                        This section is ready when you want to add {group.groupLabel.toLowerCase()}.
+                      </div>
                     ) : (
                       <div className="studio-board-grid">
                         {group.items.map((linkedItem) => (
@@ -612,4 +797,134 @@ function TextAreaField({
       />
     </label>
   );
+}
+
+function getStudioSectionLabel(linkedItem: OutfitLinkedItem): StudioSectionLabel {
+  return getStudioSectionLabelFromInventory(linkedItem.inventoryItem, linkedItem);
+}
+
+function getStudioSectionLabelFromInventory(
+  inventoryItem: InventoryItem | null,
+  linkedItem?: OutfitLinkedItem,
+): StudioSectionLabel {
+  const itemId = inventoryItem?.item_id.trim().toUpperCase() ?? linkedItem?.itemId.trim().toUpperCase() ?? "";
+  const category = inventoryItem?.category?.trim().toLowerCase() ?? linkedItem?.categoryLabel.trim().toLowerCase() ?? "";
+  const existingGroup = linkedItem?.groupLabel.trim().toLowerCase() ?? "";
+
+  if (itemId === "TOP_051" || category === "cover up" || existingGroup === "cover up") {
+    return "Cover Up";
+  }
+
+  if (itemId === "COVERUP_001") {
+    return "Bottom";
+  }
+
+  if (category === "hair" || existingGroup === "hair" || itemId.startsWith("HAIR_")) {
+    return "Hair";
+  }
+
+  if (category === "hat" || category === "hats" || existingGroup === "hat" || itemId.startsWith("HAT_")) {
+    return "Hat";
+  }
+
+  if (category === "dress" || itemId.startsWith("DRESS_")) {
+    return "Dress";
+  }
+
+  if (
+    ["one piece", "set", "romper", "jumpsuit"].includes(category) ||
+    itemId.startsWith("ONEPIECE_") ||
+    itemId.startsWith("SET_") ||
+    itemId.startsWith("ROMPER_")
+  ) {
+    return "One Piece";
+  }
+
+  if (category === "top" || existingGroup === "top" || itemId.startsWith("TOP_")) {
+    return "Top";
+  }
+
+  if (category === "bodysuit" || itemId.startsWith("BODYSUIT_")) {
+    return "Bodysuit";
+  }
+
+  if (["bottom", "bottoms", "pants", "trousers", "jeans"].includes(category) || itemId.startsWith("BOTTOM_")) {
+    return "Bottom";
+  }
+
+  if (category === "skirt" || itemId.startsWith("SKIRT_")) {
+    return "Skirt";
+  }
+
+  if (category === "shorts" || itemId.startsWith("SHORTS_")) {
+    return "Shorts";
+  }
+
+  if (category === "swimwear" || category === "swim set" || itemId.startsWith("SWIM_")) {
+    return "Swimwear";
+  }
+
+  if (category === "outerwear" || itemId.startsWith("OUTERWEAR_")) {
+    return "Outerwear";
+  }
+
+  if (category === "shoes" || existingGroup === "shoes" || itemId.startsWith("SHOE_")) {
+    return "Shoes";
+  }
+
+  if (category === "bag" || existingGroup === "bag" || itemId.startsWith("BAG_")) {
+    return "Bag";
+  }
+
+  if (
+    category === "sunglasses" ||
+    category === "eyewear" ||
+    category === "glasses" ||
+    itemId.startsWith("SUNGLASSES_")
+  ) {
+    return "Sunglasses";
+  }
+
+  return "Accessories";
+}
+
+function getVisibleSections(linkedItems: OutfitLinkedItem[]) {
+  return getOrderedSections(linkedItems.map((item) => getStudioSectionLabel(item)));
+}
+
+function getOrderedSections(sections: readonly StudioSectionLabel[]) {
+  const deduped = [...new Set(sections)];
+  return STUDIO_SECTION_ORDER.filter((section) => deduped.includes(section));
+}
+
+function insertSectionInDefaultPosition(
+  currentSections: readonly StudioSectionLabel[],
+  nextSection: StudioSectionLabel,
+) {
+  if (currentSections.includes(nextSection)) {
+    return [...currentSections];
+  }
+
+  const nextIndex = STUDIO_SECTION_ORDER.indexOf(nextSection);
+  const insertAt = currentSections.findIndex(
+    (section) => STUDIO_SECTION_ORDER.indexOf(section) > nextIndex,
+  );
+
+  if (insertAt < 0) {
+    return [...currentSections, nextSection];
+  }
+
+  return [
+    ...currentSections.slice(0, insertAt),
+    nextSection,
+    ...currentSections.slice(insertAt),
+  ];
+}
+
+function getFirstAvailableSection(sectionOrder: readonly StudioSectionLabel[]) {
+  return STUDIO_SECTION_ORDER.find((section) => !sectionOrder.includes(section)) ?? "";
+}
+
+function areSectionsEqual(left: readonly StudioSectionLabel[], right: readonly StudioSectionLabel[]) {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }

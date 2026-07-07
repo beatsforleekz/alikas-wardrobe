@@ -6,31 +6,20 @@ import { LoginForm } from "@/components/auth/login-form";
 import { CollectionNav } from "@/components/navigation/collection-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
+import {
+  CATALOGUE_SETTINGS_KEY,
+  defaultCatalogueSettings,
+  getActiveCatalogueUrl,
+  getStoredCatalogueSettings,
+  type CatalogueSettings,
+} from "@/lib/catalogue";
 import { getCatalogueStorageBucket, hasCatalogueStorage } from "@/lib/env";
-
-const CATALOGUE_SETTINGS_KEY = "alikas-wardrobe:catalogue-settings";
-
-type CatalogueSettings = {
-  sourceType: "url" | "storage";
-  url: string;
-  storagePath: string;
-  fileName: string;
-  fileUrl: string;
-};
-
-const defaultSettings: CatalogueSettings = {
-  sourceType: "url",
-  url: "",
-  storagePath: "",
-  fileName: "",
-  fileUrl: "",
-};
 
 export function CatalogueApp() {
   const { session, isSessionLoading, handleLogin, supabase } = useWardrobeSession();
   const storageEnabled = hasCatalogueStorage();
   const bucketName = getCatalogueStorageBucket();
-  const [settings, setSettings] = useState<CatalogueSettings>(defaultSettings);
+  const [settings, setSettings] = useState<CatalogueSettings>(defaultCatalogueSettings);
   const [draftUrl, setDraftUrl] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [copied, setCopied] = useState(false);
@@ -47,7 +36,7 @@ export function CatalogueApp() {
   }, []);
 
   const activeCatalogueUrl = useMemo(
-    () => (settings.sourceType === "storage" ? settings.fileUrl : settings.url),
+    () => getActiveCatalogueUrl(settings),
     [settings],
   );
 
@@ -91,7 +80,7 @@ export function CatalogueApp() {
   }
 
   function handleClear() {
-    persist(defaultSettings);
+    persist(defaultCatalogueSettings);
     setDraftUrl("");
     setStatusMessage("Catalogue entry cleared.");
   }
@@ -288,28 +277,4 @@ export function CatalogueApp() {
       </section>
     </main>
   );
-}
-
-function getStoredCatalogueSettings(): CatalogueSettings {
-  if (typeof window === "undefined") {
-    return defaultSettings;
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(CATALOGUE_SETTINGS_KEY);
-    if (!rawValue) {
-      return defaultSettings;
-    }
-
-    const parsed = JSON.parse(rawValue) as Partial<CatalogueSettings>;
-    return {
-      sourceType: parsed.sourceType === "storage" ? "storage" : "url",
-      url: parsed.url ?? "",
-      storagePath: parsed.storagePath ?? "",
-      fileName: parsed.fileName ?? "",
-      fileUrl: parsed.fileUrl ?? "",
-    };
-  } catch {
-    return defaultSettings;
-  }
 }

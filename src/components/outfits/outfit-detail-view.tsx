@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { InternalBackButton } from "@/components/navigation/internal-back-button";
 import { StatusBadge } from "@/components/inventory/status-badge";
 import { CollectionNav } from "@/components/navigation/collection-nav";
 import { LookbookPromptPanel } from "@/components/outfits/lookbook-prompt-panel";
@@ -115,13 +116,9 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
   return (
     <main className="page-shell">
       <CollectionNav />
+      <InternalBackButton href="/outfits" label="Back to lookbooks" />
 
       <div className="detail-header">
-        <div className="detail-topbar">
-          <Link className="back-link" href="/outfits">
-            Back to outfits
-          </Link>
-        </div>
         <div className="detail-title-row">
           <div className="detail-title-copy">
             <p className="eyebrow">Lookbook</p>

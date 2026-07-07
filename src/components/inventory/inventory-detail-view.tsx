@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { InternalBackButton } from "@/components/navigation/internal-back-button";
 import { StatusBadge } from "@/components/inventory/status-badge";
 import { CollectionNav } from "@/components/navigation/collection-nav";
 import { DetailGrid } from "@/components/ui/detail-grid";
@@ -131,12 +132,8 @@ export function InventoryDetailView({ itemId }: { itemId: string }) {
   return (
     <main className="page-shell">
       <CollectionNav />
+      <InternalBackButton href="/wardrobe" label="Back to wardrobe" />
       <div className="detail-header">
-        <div className="detail-topbar">
-          <Link className="back-link" href="/wardrobe">
-            Back to wardrobe
-          </Link>
-        </div>
         <div className="detail-title-row">
           <div className="detail-title-copy">
             <p className="eyebrow">Wardrobe piece</p>
