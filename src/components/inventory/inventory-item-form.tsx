@@ -56,6 +56,14 @@ export function InventoryItemForm({
     () => [...new Set(categories.filter(Boolean))].sort((left, right) => left.localeCompare(right)),
     [categories],
   );
+  const statusOptions = useMemo(
+    () => [...INVENTORY_STATUS_OPTIONS].sort((left, right) => left.localeCompare(right)),
+    [],
+  );
+  const travelFriendlyOptions = useMemo(
+    () => [...TRAVEL_FRIENDLY_OPTIONS].sort((left, right) => left.localeCompare(right)),
+    [],
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -199,7 +207,7 @@ export function InventoryItemForm({
           <SelectField
             label="Status"
             value={draft.status}
-            options={[...INVENTORY_STATUS_OPTIONS]}
+            options={statusOptions}
             onChange={(value) => setDraft((current) => ({ ...current, status: value }))}
           />
           <TextField label="Colour" value={draft.colour} onChange={(value) => setDraft((current) => ({ ...current, colour: value }))} />
@@ -209,7 +217,7 @@ export function InventoryItemForm({
           <SelectField
             label="Travel friendly"
             value={draft.travel_friendly}
-            options={[...TRAVEL_FRIENDLY_OPTIONS]}
+            options={travelFriendlyOptions}
             onChange={(value) => setDraft((current) => ({ ...current, travel_friendly: value }))}
           />
           <TextField label="Set name" value={draft.set_name} onChange={(value) => setDraft((current) => ({ ...current, set_name: value }))} />

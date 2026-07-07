@@ -43,3 +43,24 @@ export function getStoredCatalogueSettings(): CatalogueSettings {
 export function getActiveCatalogueUrl(settings: CatalogueSettings) {
   return settings.sourceType === "storage" ? settings.fileUrl : settings.url;
 }
+
+export function isLikelyPdfUrl(value: string) {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return (
+      url.pathname.toLowerCase().endsWith(".pdf") ||
+      url.search.toLowerCase().includes(".pdf") ||
+      url.hostname.includes("supabase")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function getCatalogueEmbedUrl(value: string) {
+  return value.trim();
+}

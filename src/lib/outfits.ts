@@ -7,6 +7,7 @@ import type {
   OutfitLinkedItem,
   ValidatedOutfit,
 } from "@/types/outfit";
+import { isUnavailableInventoryStatus } from "@/lib/inventory";
 
 type OutfitRow = {
   id: string;
@@ -82,6 +83,7 @@ export function validateOutfit(outfit: Outfit, inventoryItems: InventoryItem[]):
     linkedItemCount: linkedItems.length,
     missingItemCount: linkedItems.filter((item) => item.status === "missing_item").length,
     needsReviewCount: linkedItems.filter((item) => item.status === "needs_review").length,
+    unavailableItemCount: linkedItems.filter((item) => item.status === "unavailable_item").length,
   };
 }
 
@@ -150,6 +152,8 @@ export function generateLookbookPrompt(
           ? ""
           : linkedItem.status === "missing_item"
             ? "\nStatus:\nMissing Item"
+            : linkedItem.status === "unavailable_item"
+              ? `\nStatus:\n${linkedItem.availabilityStatus || "Unavailable"}`
             : "\nStatus:\nNeeds Review";
       const noteBlock = linkedItem.notes?.trim() ? `\nReference Note:\n${linkedItem.notes.trim()}` : "";
 
@@ -338,6 +342,7 @@ function buildLinkedItem(
       categoryLabel: "Missing item",
       groupLabel: "Accessories",
       notes: "This item ID does not currently exist in the wardrobe inventory.",
+      availabilityStatus: null,
     };
   }
 
@@ -349,6 +354,19 @@ function buildLinkedItem(
       categoryLabel: inventoryItem.category?.trim() || "Uncategorised",
       groupLabel: getOutfitGroupLabel(inventoryItem),
       notes: "This item ID is linked more than once in the same outfit and should be reviewed.",
+      availabilityStatus: inventoryItem.status ?? null,
+    };
+  }
+
+  if (isUnavailableInventoryStatus(inventoryItem.status)) {
+    return {
+      itemId,
+      status: "unavailable_item",
+      inventoryItem,
+      categoryLabel: inventoryItem.category?.trim() || "Uncategorised",
+      groupLabel: getOutfitGroupLabel(inventoryItem),
+      notes: "This item is no longer available in the active wardrobe.",
+      availabilityStatus: inventoryItem.status ?? null,
     };
   }
 
@@ -359,6 +377,7 @@ function buildLinkedItem(
     categoryLabel: inventoryItem.category?.trim() || "Uncategorised",
     groupLabel: getOutfitGroupLabel(inventoryItem),
     notes: null,
+    availabilityStatus: inventoryItem.status ?? null,
   };
 }
 
@@ -391,6 +410,7 @@ function ensureDefaultHairReference(
         categoryLabel: hairInventoryItem.category?.trim() || "Hair",
         groupLabel: "Hair",
         notes: "Auto-added as the default hair reference for holiday lookbooks.",
+        availabilityStatus: hairInventoryItem.status ?? null,
       },
     ];
   }
@@ -404,8 +424,17 @@ function ensureDefaultHairReference(
       categoryLabel: "Hair",
       groupLabel: "Hair",
       notes: "Auto-added default hair reference. HAIR_003 Whitney is not available in the current inventory data.",
+      availabilityStatus: null,
     },
   ];
+}
+
+export function hasUnavailableOutfitItems(validatedOutfit: ValidatedOutfit) {
+  return validatedOutfit.missingItemCount > 0 || validatedOutfit.unavailableItemCount > 0;
+}
+
+export function getOutfitIncompleteCount(validatedOutfit: ValidatedOutfit) {
+  return validatedOutfit.missingItemCount + validatedOutfit.unavailableItemCount;
 }
 
 function deriveSeasonLabel(linkedItems: OutfitLinkedItem[]) {

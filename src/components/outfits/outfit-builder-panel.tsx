@@ -11,7 +11,12 @@ import {
   normalizeOutfitInput,
   validateOutfitInput,
 } from "@/lib/outfits";
-import { filterInventoryItems, getDisplayImage } from "@/lib/inventory";
+import {
+  filterInventoryItems,
+  getDisplayImage,
+  isInventoryItemAvailableForNewUse,
+  isUnavailableInventoryStatus,
+} from "@/lib/inventory";
 import type { InventoryFilters, InventoryItem } from "@/types/inventory";
 import type { Outfit, OutfitInput, OutfitLinkedItem } from "@/types/outfit";
 
@@ -85,6 +90,8 @@ export function OutfitBuilderPanel({
   const [sectionOrder, setSectionOrder] = useState<StudioSectionLabel[]>([]);
   const [manualSections, setManualSections] = useState<StudioSectionLabel[]>([]);
   const [pendingSection, setPendingSection] = useState<StudioSectionLabel | "">("");
+  const [showUnavailableItems, setShowUnavailableItems] = useState(false);
+  const [replacementTargetItemId, setReplacementTargetItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -100,6 +107,8 @@ export function OutfitBuilderPanel({
       setSectionOrder(initialSections);
       setManualSections([]);
       setPendingSection(getFirstAvailableSection(initialSections));
+      setShowUnavailableItems(false);
+      setReplacementTargetItemId(null);
     }
   }, [open, outfit, inventoryItems]);
 
@@ -113,12 +122,17 @@ export function OutfitBuilderPanel({
 
   const pickerItems = useMemo(
     () =>
-      filterInventoryItems(inventoryItems, {
+      filterInventoryItems(
+        showUnavailableItems
+          ? inventoryItems
+          : inventoryItems.filter((item) => isInventoryItemAvailableForNewUse(item)),
+        {
         ...defaultPickerFilters,
         query: pickerQuery,
         category: pickerCategory,
-      }).slice(0, 140),
-    [inventoryItems, pickerCategory, pickerQuery],
+      },
+      ).slice(0, 140),
+    [inventoryItems, pickerCategory, pickerQuery, showUnavailableItems],
   );
 
   const validatedDraftOutfit = useMemo(
@@ -236,6 +250,11 @@ export function OutfitBuilderPanel({
   }
 
   function addItem(itemId: string) {
+    if (replacementTargetItemId) {
+      replaceItem(replacementTargetItemId, itemId);
+      return;
+    }
+
     const inventoryItem = inventoryItems.find((item) => item.item_id === itemId) ?? null;
     const targetSection = getStudioSectionLabelFromInventory(inventoryItem);
 
@@ -248,6 +267,26 @@ export function OutfitBuilderPanel({
       current.includes(targetSection) ? current : insertSectionInDefaultPosition(current, targetSection),
     );
     setManualSections((current) => current.filter((section) => section !== targetSection));
+  }
+
+  function replaceItem(currentItemId: string, nextItemId: string) {
+    if (currentItemId === nextItemId) {
+      setReplacementTargetItemId(null);
+      return;
+    }
+
+    const nextInventoryItem = inventoryItems.find((item) => item.item_id === nextItemId) ?? null;
+    const nextSection = getStudioSectionLabelFromInventory(nextInventoryItem);
+
+    setDraft((current) => ({
+      ...current,
+      item_ids: current.item_ids.map((entry) => (entry === currentItemId ? nextItemId : entry)),
+    }));
+    setSectionOrder((current) =>
+      current.includes(nextSection) ? current : insertSectionInDefaultPosition(current, nextSection),
+    );
+    setManualSections((current) => current.filter((section) => section !== nextSection));
+    setReplacementTargetItemId(null);
   }
 
   function removeItem(itemId: string) {
@@ -396,7 +435,11 @@ export function OutfitBuilderPanel({
             <div className="studio-section-head">
               <div className="results-copy">
                 <p className="results-heading">Wardrobe browser</p>
-                <p>Search, filter, and add pieces into the outfit board.</p>
+                <p>
+                  {replacementTargetItemId
+                    ? `Choose a wardrobe piece to replace ${replacementTargetItemId}.`
+                    : "Search, filter, and add pieces into the outfit board."}
+                </p>
               </div>
             </div>
 
@@ -420,7 +463,24 @@ export function OutfitBuilderPanel({
                   </option>
                 ))}
               </select>
+              <label className="selection-check studio-toggle-check">
+                <input
+                  type="checkbox"
+                  checked={showUnavailableItems}
+                  onChange={(event) => setShowUnavailableItems(event.target.checked)}
+                />
+                <span>Show unavailable items</span>
+              </label>
               <div className="studio-category-row">
+                {replacementTargetItemId ? (
+                  <button
+                    type="button"
+                    className="ghost-button studio-mini-button"
+                    onClick={() => setReplacementTargetItemId(null)}
+                  >
+                    Cancel replace
+                  </button>
+                ) : null}
                 {categoryOptions.slice(0, 8).map((category) => (
                   <button
                     type="button"
@@ -443,7 +503,11 @@ export function OutfitBuilderPanel({
                   <button
                     type="button"
                     key={item.id}
-                    className={`studio-browser-card ${isSelected ? "is-selected" : ""}`}
+                    className={`studio-browser-card ${isSelected ? "is-selected" : ""} ${
+                      replacementTargetItemId ? "is-replace-mode" : ""
+                    } ${
+                      isUnavailableInventoryStatus(item.status) ? "is-unavailable" : ""
+                    }`}
                     onClick={() => (isSelected ? removeItem(item.item_id) : addItem(item.item_id))}
                     draggable
                     onDragStart={() => {
@@ -469,6 +533,9 @@ export function OutfitBuilderPanel({
                       <p className="sku-label">{item.item_id}</p>
                       <h3>{item.item_name || item.item_id}</h3>
                       <p>{item.category || "Uncategorised"}</p>
+                      {isUnavailableInventoryStatus(item.status) ? (
+                        <p className="studio-unavailable-copy">{item.status}</p>
+                      ) : null}
                     </div>
                   </button>
                 );
@@ -581,6 +648,8 @@ export function OutfitBuilderPanel({
                           <BoardCard
                             key={`${group.groupLabel}-${linkedItem.itemId}`}
                             linkedItem={linkedItem}
+                            isReplacing={replacementTargetItemId === linkedItem.itemId}
+                            onReplace={() => setReplacementTargetItemId(linkedItem.itemId)}
                             onRemove={() => removeItem(linkedItem.itemId)}
                             onMoveUp={() => moveItem(linkedItem.itemId, -1)}
                             onMoveDown={() => moveItem(linkedItem.itemId, 1)}
@@ -692,6 +761,8 @@ export function OutfitBuilderPanel({
 
 function BoardCard({
   linkedItem,
+  isReplacing,
+  onReplace,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -700,6 +771,8 @@ function BoardCard({
   onDrop,
 }: {
   linkedItem: OutfitLinkedItem;
+  isReplacing: boolean;
+  onReplace: () => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -709,10 +782,14 @@ function BoardCard({
 }) {
   const inventoryItem = linkedItem.inventoryItem;
   const imageUrl = inventoryItem ? getDisplayImage(inventoryItem.image) : null;
+  const isUnavailable =
+    linkedItem.status === "unavailable_item" || linkedItem.status === "missing_item";
 
   return (
     <article
-      className="studio-board-card"
+      className={`studio-board-card ${isUnavailable ? "is-unavailable" : ""} ${
+        isReplacing ? "is-replacing" : ""
+      }`}
       draggable
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -736,9 +813,19 @@ function BoardCard({
         <p className="sku-label">{linkedItem.itemId}</p>
         <h3>{inventoryItem?.item_name || "Missing wardrobe item"}</h3>
         <p>{inventoryItem?.category || linkedItem.categoryLabel}</p>
+        {linkedItem.status === "unavailable_item" ? (
+          <p className="studio-unavailable-copy">{linkedItem.availabilityStatus}</p>
+        ) : linkedItem.status === "missing_item" ? (
+          <p className="studio-unavailable-copy">Missing item</p>
+        ) : null}
       </div>
 
       <div className="studio-board-card-actions">
+        {(linkedItem.status === "unavailable_item" || linkedItem.status === "missing_item") ? (
+          <button type="button" className="ghost-button studio-mini-button" onClick={onReplace}>
+            {isReplacing ? "Replacing..." : "Replace item"}
+          </button>
+        ) : null}
         <button type="button" className="ghost-button studio-mini-button" onClick={onMoveUp}>
           Up
         </button>

@@ -13,7 +13,13 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getInventoryItems } from "@/lib/data/inventory";
 import { getOutfitById } from "@/lib/data/outfits";
 import { getDisplayImage } from "@/lib/inventory";
-import { getOutfitDisplayImage, groupOutfitItems, validateOutfit } from "@/lib/outfits";
+import {
+  getOutfitDisplayImage,
+  getOutfitIncompleteCount,
+  groupOutfitItems,
+  hasUnavailableOutfitItems,
+  validateOutfit,
+} from "@/lib/outfits";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
 import type { Outfit } from "@/types/outfit";
@@ -112,11 +118,25 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
   }
 
   const imageUrl = getOutfitDisplayImage(validatedOutfit.outfit);
+  const hasUnavailableItems = hasUnavailableOutfitItems(validatedOutfit);
+  const incompleteCount = getOutfitIncompleteCount(validatedOutfit);
 
   return (
     <main className="page-shell">
       <CollectionNav />
       <InternalBackButton href="/outfits" label="Back to lookbooks" />
+      {hasUnavailableItems ? (
+        <section className="setup-notice">
+          <p className="results-heading">This look has unavailable items.</p>
+          <p>
+            {incompleteCount} linked item{incompleteCount === 1 ? "" : "s"} can no longer be used
+            for new styling or packing.
+          </p>
+          <Link className="button-link" href={`/outfits?edit=${validatedOutfit.outfit.id}`}>
+            Open in Outfit Studio
+          </Link>
+        </section>
+      ) : null}
 
       <div className="detail-header">
         <div className="detail-title-row">
@@ -140,7 +160,9 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
               <span>{validatedOutfit.linkedItemCount} linked items</span>
             </div>
           </div>
-          {validatedOutfit.missingItemCount ? (
+          {hasUnavailableItems ? (
+            <span className="status-badge status-returned">Incomplete</span>
+          ) : validatedOutfit.missingItemCount ? (
             <span className="status-badge status-archived">
               {validatedOutfit.missingItemCount} missing
             </span>
@@ -190,6 +212,7 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
             <div className="detail-chip-row">
               <span className="detail-chip">{validatedOutfit.linkedItemCount} linked item IDs</span>
               <span className="detail-chip">{validatedOutfit.missingItemCount} missing</span>
+              <span className="detail-chip">{validatedOutfit.unavailableItemCount} unavailable</span>
               <span className="detail-chip">{validatedOutfit.needsReviewCount} needs review</span>
             </div>
           </article>
@@ -219,7 +242,14 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
                 const itemImage = item ? getDisplayImage(item.image) : null;
 
                 return (
-                  <article className="linked-item-card" key={`${linkedItem.itemId}-${index}`}>
+                  <article
+                    className={`linked-item-card ${
+                      linkedItem.status === "unavailable_item" || linkedItem.status === "missing_item"
+                        ? "is-unavailable"
+                        : ""
+                    }`}
+                    key={`${linkedItem.itemId}-${index}`}
+                  >
                     <div className="linked-item-head">
                       <div>
                         <p className="sku-label">{linkedItem.itemId}</p>
@@ -229,6 +259,8 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
                         <span className="status-badge status-available">Confirmed</span>
                       ) : linkedItem.status === "missing_item" ? (
                         <span className="status-badge status-archived">Missing item</span>
+                      ) : linkedItem.status === "unavailable_item" ? (
+                        <StatusBadge status={linkedItem.availabilityStatus} />
                       ) : (
                         <span className="status-badge status-packed">Needs review</span>
                       )}
@@ -263,12 +295,22 @@ export function OutfitDetailView({ outfitId }: { outfitId: string }) {
                           {linkedItem.itemId} — {item?.item_name || "MISSING_ITEM"}
                         </p>
                         <p className="linked-item-meta">{linkedItem.categoryLabel}</p>
+                        {linkedItem.status === "unavailable_item" ? (
+                          <p className="linked-item-warning">This item is no longer available.</p>
+                        ) : null}
                         {linkedItem.notes ? <p className="linked-item-note">{linkedItem.notes}</p> : null}
-                        {item ? (
+                        {item || linkedItem.status === "missing_item" ? (
                           <div className="linked-item-actions">
-                            <Link className="back-link linked-item-link" href={`/items/${encodeURIComponent(item.item_id)}`}>
-                              View wardrobe item
-                            </Link>
+                            {item ? (
+                              <Link className="back-link linked-item-link" href={`/items/${encodeURIComponent(item.item_id)}`}>
+                                View wardrobe item
+                              </Link>
+                            ) : null}
+                            {(linkedItem.status === "unavailable_item" || linkedItem.status === "missing_item") ? (
+                              <Link className="back-link linked-item-link" href={`/outfits?edit=${validatedOutfit.outfit.id}`}>
+                                Replace item
+                              </Link>
+                            ) : null}
                             {itemImage ? (
                               <a
                                 className="back-link linked-item-link"

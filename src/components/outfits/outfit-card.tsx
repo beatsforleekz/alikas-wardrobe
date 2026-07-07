@@ -1,7 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { getOutfitDisplayImage } from "@/lib/outfits";
+import {
+  getOutfitDisplayImage,
+  getOutfitIncompleteCount,
+  hasUnavailableOutfitItems,
+} from "@/lib/outfits";
 import type { ValidatedOutfit } from "@/types/outfit";
 
 type OutfitCardProps = {
@@ -11,6 +15,8 @@ type OutfitCardProps = {
 
 export function OutfitCard({ entry, onEdit }: OutfitCardProps) {
   const imageUrl = getOutfitDisplayImage(entry.outfit);
+  const hasUnavailableItems = hasUnavailableOutfitItems(entry);
+  const incompleteCount = getOutfitIncompleteCount(entry);
 
   return (
     <article className="outfit-card">
@@ -62,11 +68,24 @@ export function OutfitCard({ entry, onEdit }: OutfitCardProps) {
               ) : null}
             </div>
 
-            {entry.missingItemCount || entry.needsReviewCount ? (
+            {hasUnavailableItems || entry.needsReviewCount ? (
               <div className="outfit-warning-row">
+                {hasUnavailableItems ? (
+                  <span className="status-badge status-returned">Incomplete</span>
+                ) : null}
+                {hasUnavailableItems ? (
+                  <span className="detail-chip">
+                    {incompleteCount} unavailable item{incompleteCount === 1 ? "" : "s"}
+                  </span>
+                ) : null}
                 {entry.missingItemCount ? (
                   <span className="status-badge status-archived">
                     {entry.missingItemCount} missing item{entry.missingItemCount > 1 ? "s" : ""}
+                  </span>
+                ) : null}
+                {entry.unavailableItemCount ? (
+                  <span className="status-badge status-discarded">
+                    {entry.unavailableItemCount} unavailable
                   </span>
                 ) : null}
                 {entry.needsReviewCount ? (

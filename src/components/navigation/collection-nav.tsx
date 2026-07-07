@@ -8,6 +8,7 @@ const navItems = [
   { href: "/wardrobe", label: "Wardrobe" },
   { href: "/outfits", label: "Lookbooks" },
   { href: "/travel", label: "Travel" },
+  { href: "/wishlist", label: "Wishlist" },
   { href: "/catalogue", label: "Catalogue" },
 ];
 
@@ -25,6 +26,8 @@ export function CollectionNav() {
               ? pathname.startsWith("/wardrobe") || pathname.startsWith("/items/")
               : item.href === "/travel"
               ? pathname.startsWith("/travel")
+              : item.href === "/wishlist"
+              ? pathname.startsWith("/wishlist")
               : pathname.startsWith(item.href);
 
           return (

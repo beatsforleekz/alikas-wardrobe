@@ -146,7 +146,7 @@ export function TripsApp() {
             <article className="detail-card travel-intro-card">
               <p className="eyebrow">Travel suite</p>
               <p className="travel-intro-copy">
-                Build the trip first, then let wardrobe packing, essentials, and catalogue capsules layer in around it.
+                Build the trip first, then let wardrobe packing, essentials, and an optional capsule link layer in around it.
               </p>
             </article>
 

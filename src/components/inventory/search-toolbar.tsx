@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type { InventoryFilters } from "@/types/inventory";
 
@@ -16,6 +16,7 @@ type SearchToolbarProps = {
   totalCount: number;
   resultCount: number;
   onChange: (filters: InventoryFilters) => void;
+  onReset: () => void;
 };
 
 export function SearchToolbar({
@@ -24,11 +25,12 @@ export function SearchToolbar({
   totalCount,
   resultCount,
   onChange,
+  onReset,
 }: SearchToolbarProps) {
-  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const activeFilterCount = useMemo(
     () =>
       [
+        filters.query,
         filters.category,
         filters.status,
         filters.season,
@@ -45,16 +47,14 @@ export function SearchToolbar({
           <label className="search-label" htmlFor="inventory-search">
             Discover by name, SKU, colour, category, tags, or vibe
           </label>
-
-          <button
-            className={`filter-toggle ${isFiltersOpen ? "is-open" : ""}`}
-            type="button"
-            onClick={() => setIsFiltersOpen((value) => !value)}
-            aria-expanded={isFiltersOpen}
-          >
-            Filters
+          <div className="search-panel-actions">
+            {activeFilterCount ? (
+              <button className="ghost-button studio-mini-button" type="button" onClick={onReset}>
+                Refresh filters
+              </button>
+            ) : null}
             {activeFilterCount ? <span className="filter-toggle-count">{activeFilterCount}</span> : null}
-          </button>
+          </div>
         </div>
 
         <input
@@ -72,7 +72,7 @@ export function SearchToolbar({
         />
       </div>
 
-      <div className={`filter-grid editorial-filter-grid ${isFiltersOpen ? "is-open" : "is-collapsed"}`}>
+      <div className="filter-grid editorial-filter-grid">
         <FilterSelect
           label={`Category (${filterOptions.categories.length})`}
           value={filters.category}

@@ -10,7 +10,9 @@ import {
   CATALOGUE_SETTINGS_KEY,
   defaultCatalogueSettings,
   getActiveCatalogueUrl,
+  getCatalogueEmbedUrl,
   getStoredCatalogueSettings,
+  isLikelyPdfUrl,
   type CatalogueSettings,
 } from "@/lib/catalogue";
 import { getCatalogueStorageBucket, hasCatalogueStorage } from "@/lib/env";
@@ -38,6 +40,14 @@ export function CatalogueApp() {
   const activeCatalogueUrl = useMemo(
     () => getActiveCatalogueUrl(settings),
     [settings],
+  );
+  const embedCatalogueUrl = useMemo(
+    () => getCatalogueEmbedUrl(activeCatalogueUrl),
+    [activeCatalogueUrl],
+  );
+  const canEmbedCatalogue = useMemo(
+    () => isLikelyPdfUrl(activeCatalogueUrl),
+    [activeCatalogueUrl],
   );
 
   if (isSessionLoading) {
@@ -176,8 +186,8 @@ export function CatalogueApp() {
       <section className="dashboard dashboard-tight">
         <article className="detail-card catalogue-card">
           <div className="results-copy">
-            <p className="results-heading">Wardrobe catalogue access</p>
-            <p>Keep the current wardrobe catalogue close to the lookbook workflow.</p>
+            <p className="results-heading">Wardrobe catalogue</p>
+            <p>Save the current PDF link here, then keep it open directly inside the app when needed.</p>
           </div>
 
           <div className="catalogue-section">
@@ -271,6 +281,34 @@ export function CatalogueApp() {
               description="Add a hosted URL or upload a wardrobe catalogue PDF so it is ready when generating lookbook prompts."
             />
           )}
+
+          {hasSavedCatalogue ? (
+            canEmbedCatalogue ? (
+              <div className="catalogue-preview-shell">
+                <div className="results-copy">
+                  <p className="results-heading">Embedded preview</p>
+                  <p>Preview the saved wardrobe catalogue PDF here.</p>
+                </div>
+                <div className="catalogue-preview-frame">
+                  <iframe
+                    title="Wardrobe catalogue PDF preview"
+                    src={embedCatalogueUrl}
+                    className="catalogue-preview-iframe"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="catalogue-preview-shell">
+                <div className="results-copy">
+                  <p className="results-heading">Preview unavailable</p>
+                  <p>
+                    This saved link does not look like a direct PDF URL, so it may not embed reliably.
+                    Use a direct hosted PDF link when possible.
+                  </p>
+                </div>
+              </div>
+            )
+          ) : null}
 
           {statusMessage ? <p className="catalogue-helper">{statusMessage}</p> : null}
         </article>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { INVENTORY_STATUS_OPTIONS } from "@/lib/inventory";
 import type { InventoryBulkActionInput } from "@/types/inventory";
@@ -22,6 +22,14 @@ export function InventoryBulkActions({
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
   const [isApplying, setIsApplying] = useState(false);
+  const sortedStatusOptions = useMemo(
+    () => [...INVENTORY_STATUS_OPTIONS].sort((left, right) => left.localeCompare(right)),
+    [],
+  );
+  const sortedCategoryOptions = useMemo(
+    () => [...categoryOptions].sort((left, right) => left.localeCompare(right)),
+    [categoryOptions],
+  );
 
   async function handleApply() {
     setError("");
@@ -74,7 +82,7 @@ export function InventoryBulkActions({
             <span>Status</span>
             <select className="filter-select" value={value} onChange={(event) => setValue(event.target.value)}>
               <option value="">Select status</option>
-              {INVENTORY_STATUS_OPTIONS.map((option) => (
+              {sortedStatusOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -88,7 +96,7 @@ export function InventoryBulkActions({
             <span>Category</span>
             <select className="filter-select" value={value} onChange={(event) => setValue(event.target.value)}>
               <option value="">Select category</option>
-              {categoryOptions.map((option) => (
+              {sortedCategoryOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>

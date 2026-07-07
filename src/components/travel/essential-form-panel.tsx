@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { SlideOver } from "@/components/ui/slide-over";
 import {
@@ -27,6 +27,14 @@ export function EssentialFormPanel({
   const [draft, setDraft] = useState<EssentialLibraryItemInput>(defaultEssentialLibraryItemInput);
   const [errorMessage, setErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const categoryOptions = useMemo(
+    () => [...ESSENTIAL_CATEGORY_OPTIONS].sort((left, right) => left.localeCompare(right)),
+    [],
+  );
+  const inclusionOptions = useMemo(
+    () => [...ESSENTIAL_INCLUSION_OPTIONS].sort((left, right) => left.localeCompare(right)),
+    [],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -99,7 +107,7 @@ export function EssentialFormPanel({
               value={draft.category}
               onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}
             >
-              {ESSENTIAL_CATEGORY_OPTIONS.map((option) => (
+              {categoryOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -119,7 +127,7 @@ export function EssentialFormPanel({
                 }))
               }
             >
-              {ESSENTIAL_INCLUSION_OPTIONS.map((option) => (
+              {inclusionOptions.map((option) => (
                 <option key={option} value={option}>
                   {formatEssentialInclusionType(option)}
                 </option>

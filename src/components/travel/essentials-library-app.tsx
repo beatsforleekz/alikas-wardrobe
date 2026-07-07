@@ -205,7 +205,7 @@ export function EssentialsLibraryApp() {
           <div className="results-bar inventory-overview">
             <div className="results-copy">
               <p className="results-heading">Essentials library</p>
-              <p>{filteredItems.length} reusable essential{filteredItems.length === 1 ? "" : "s"} ready for trips.</p>
+              <p>Manage the reusable checklist here. Trip-by-trip checking now lives only inside Trip Detail.</p>
             </div>
             <button
               type="button"

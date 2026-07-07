@@ -25,7 +25,11 @@ export type OutfitInput = {
   item_ids: string[];
 };
 
-export type OutfitItemValidationStatus = "confirmed" | "needs_review" | "missing_item";
+export type OutfitItemValidationStatus =
+  | "confirmed"
+  | "needs_review"
+  | "missing_item"
+  | "unavailable_item";
 
 export type OutfitLinkedItem = {
   itemId: string;
@@ -34,6 +38,7 @@ export type OutfitLinkedItem = {
   categoryLabel: string;
   groupLabel: string;
   notes: string | null;
+  availabilityStatus: string | null;
 };
 
 export type ValidatedOutfit = {
@@ -42,6 +47,7 @@ export type ValidatedOutfit = {
   linkedItemCount: number;
   missingItemCount: number;
   needsReviewCount: number;
+  unavailableItemCount: number;
 };
 
 export type LookbookPromptResult = {

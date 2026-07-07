@@ -77,6 +77,25 @@ export async function updateInventoryItem(
   return data as InventoryItem;
 }
 
+export async function updateInventoryItemStatus(
+  supabase: SupabaseClient,
+  id: string,
+  status: string,
+) {
+  const { data, error } = await supabase
+    .from("inventory")
+    .update({ status })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update inventory item status: ${error.message}`);
+  }
+
+  return data as InventoryItem;
+}
+
 export async function deleteInventoryItem(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("inventory").delete().eq("id", id);
 

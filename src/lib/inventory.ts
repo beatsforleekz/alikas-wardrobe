@@ -10,6 +10,13 @@ export const INVENTORY_STATUS_OPTIONS = [
   "Packed",
   "Archived",
   "Discarded",
+  "Returned",
+] as const;
+
+export const UNAVAILABLE_INVENTORY_STATUSES = [
+  "Archived",
+  "Discarded",
+  "Returned",
 ] as const;
 
 export const TRAVEL_FRIENDLY_OPTIONS = ["Yes", "No"] as const;
@@ -177,7 +184,7 @@ export function validateInventoryItemInput(
 
 export function getDisplayImage(image: string | null) {
   const trimmed = image?.trim();
-  return trimmed ? trimmed : null;
+  return trimmed ? normalizeImageUrl(trimmed) : null;
 }
 
 export function buildFilterOptions(items: InventoryItem[]) {
@@ -239,6 +246,16 @@ export function sortInventoryItems(items: InventoryItem[]) {
   return [...items].sort((left, right) => left.item_id.localeCompare(right.item_id));
 }
 
+export function isUnavailableInventoryStatus(status: string | null | undefined) {
+  return UNAVAILABLE_INVENTORY_STATUSES.some(
+    (entry) => normalizeText(entry) === normalizeText(status),
+  );
+}
+
+export function isInventoryItemAvailableForNewUse(item: InventoryItem) {
+  return !isUnavailableInventoryStatus(item.status);
+}
+
 export function getCategorySummary(items: InventoryItem[]) {
   const counts = new Map<string, number>();
 
@@ -263,6 +280,10 @@ export function getStatusTone(status: string) {
     return `status-${normalized.replace(/\s+/g, "-")}`;
   }
 
+  if (normalized === "returned") {
+    return "status-returned";
+  }
+
   if (normalized === "archived" || normalized === "discarded") {
     return `status-${normalized}`;
   }
@@ -271,7 +292,8 @@ export function getStatusTone(status: string) {
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {
-  return [...new Set(values.map((value) => value?.trim()).filter(Boolean))] as string[];
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))]
+    .sort((left, right) => left.localeCompare(right)) as string[];
 }
 
 function nullableValue(value: string | null | undefined) {
@@ -285,5 +307,20 @@ function isLikelyUrl(value: string) {
     return ["http:", "https:"].includes(url.protocol);
   } catch {
     return false;
+  }
+}
+
+function normalizeImageUrl(value: string) {
+  try {
+    const url = new URL(value);
+
+    if (url.hostname === "www.dropbox.com") {
+      url.searchParams.set("raw", "1");
+      url.searchParams.delete("dl");
+    }
+
+    return url.toString();
+  } catch {
+    return value;
   }
 }

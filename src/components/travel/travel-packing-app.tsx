@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
 import { CollectionNav } from "@/components/navigation/collection-nav";
 import { InternalBackButton } from "@/components/navigation/internal-back-button";
-import { TravelCataloguePanel } from "@/components/travel/travel-catalogue-panel";
+import { TravelCapsuleField } from "@/components/travel/travel-capsule-field";
 import { TravelShellNav } from "@/components/travel/travel-shell-nav";
 import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -384,13 +384,19 @@ export function TravelPackingApp({ initialTripId = "" }: TravelPackingAppProps) 
       const obsoleteLinkIds = currentLinks
         .filter((link) => !desiredPairs.has(`${link.trip_wardrobe_item_id}:${link.trip_outfit_id}`))
         .map((link) => link.id);
+      const existingPairs = new Set(
+        currentLinks.map((link) => `${link.trip_wardrobe_item_id}:${link.trip_outfit_id}`),
+      );
+      const missingLinkRows = desiredLinkRows.filter(
+        (row) => !existingPairs.has(`${row.trip_wardrobe_item_id}:${row.trip_outfit_id}`),
+      );
 
       if (obsoleteLinkIds.length > 0) {
         await deleteTripWardrobeItemOutfitLinks(supabase, obsoleteLinkIds);
       }
 
-      if (desiredLinkRows.length > 0) {
-        await upsertTripWardrobeItemOutfitLinks(supabase, desiredLinkRows);
+      if (missingLinkRows.length > 0) {
+        await upsertTripWardrobeItemOutfitLinks(supabase, missingLinkRows);
       }
 
       const [nextWardrobeItems, nextWardrobeItemLinks] = await Promise.all([
@@ -870,9 +876,13 @@ export function TravelPackingApp({ initialTripId = "" }: TravelPackingAppProps) 
             </article>
           </div>
 
-          <div className="travel-shell-grid">
-            <TravelCataloguePanel />
-          </div>
+          {selectedTrip ? (
+            <TravelCapsuleField
+              tripId={selectedTrip.id}
+              title="Linked capsule"
+              description="Optional capsule link, PDF, or planning note for this trip."
+            />
+          ) : null}
         </section>
       )}
     </main>

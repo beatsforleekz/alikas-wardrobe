@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { StatusBadge } from "@/components/inventory/status-badge";
-import { getDisplayImage } from "@/lib/inventory";
+import { getDisplayImage, isUnavailableInventoryStatus } from "@/lib/inventory";
 import type { InventoryItem } from "@/types/inventory";
 
 type InventoryCardProps = {
@@ -10,13 +10,21 @@ type InventoryCardProps = {
   selected?: boolean;
   onSelectChange?: (checked: boolean) => void;
   onQuickEdit?: () => void;
+  onStatusChange?: (status: "Returned" | "Discarded" | "Archived") => void;
 };
 
-export function InventoryCard({ item, selected = false, onSelectChange, onQuickEdit }: InventoryCardProps) {
+export function InventoryCard({
+  item,
+  selected = false,
+  onSelectChange,
+  onQuickEdit,
+  onStatusChange,
+}: InventoryCardProps) {
   const imageUrl = getDisplayImage(item.image);
+  const isUnavailable = isUnavailableInventoryStatus(item.status);
 
   return (
-    <article className={`card inventory-card ${selected ? "is-selected" : ""}`}>
+    <article className={`card inventory-card ${selected ? "is-selected" : ""} ${isUnavailable ? "is-unavailable" : ""}`}>
       <div className="inventory-card-select">
         {onSelectChange ? (
           <label className="selection-check">
@@ -67,6 +75,31 @@ export function InventoryCard({ item, selected = false, onSelectChange, onQuickE
           <button type="button" className="ghost-button" onClick={onQuickEdit}>
             Quick edit
           </button>
+          {onStatusChange ? (
+            <>
+              <button
+                type="button"
+                className="ghost-button studio-mini-button"
+                onClick={() => onStatusChange("Returned")}
+              >
+                Mark returned
+              </button>
+              <button
+                type="button"
+                className="ghost-button studio-mini-button"
+                onClick={() => onStatusChange("Discarded")}
+              >
+                Mark discarded
+              </button>
+              <button
+                type="button"
+                className="ghost-button studio-mini-button"
+                onClick={() => onStatusChange("Archived")}
+              >
+                Archive
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
     </article>

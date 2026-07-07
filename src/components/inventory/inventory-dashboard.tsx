@@ -13,6 +13,7 @@ import {
   bulkUpdateInventoryItems,
   createInventoryItem,
   deleteInventoryItem,
+  updateInventoryItemStatus,
   updateInventoryItem,
 } from "@/lib/data/inventory";
 import {
@@ -159,6 +160,11 @@ export function InventoryDashboard({
     setFilters(nextFilters);
   }
 
+  function handleFiltersReset() {
+    setFilters(defaultFilters);
+    setCurrentPage(1);
+  }
+
   function handlePageChange(nextPage: number) {
     setCurrentPage(Math.min(Math.max(nextPage, 1), totalPages));
   }
@@ -207,6 +213,17 @@ export function InventoryDashboard({
     setSelectedIds([]);
   }
 
+  async function handleQuickStatusChange(
+    targetItem: InventoryItem,
+    status: "Returned" | "Discarded" | "Archived",
+  ) {
+    const updated = await updateInventoryItemStatus(supabase, targetItem.id, status);
+    updateItems(
+      items.map((item) => (item.id === targetItem.id ? updated : item)),
+      `${targetItem.item_id} marked ${status.toLowerCase()}.`,
+    );
+  }
+
   function openCreateForm(seed?: InventoryItemInput) {
     setEditingItem(null);
     setDuplicateSeed(seed ?? null);
@@ -228,6 +245,7 @@ export function InventoryDashboard({
           filters={filters}
           filterOptions={filterOptions}
           onChange={handleFiltersChange}
+          onReset={handleFiltersReset}
           totalCount={items.length}
           resultCount={filteredItems.length}
         />
@@ -296,6 +314,7 @@ export function InventoryDashboard({
                   setDuplicateSeed(null);
                   setIsFormOpen(true);
                 }}
+                onStatusChange={(status) => void handleQuickStatusChange(item, status)}
               />
             ))}
           </div>

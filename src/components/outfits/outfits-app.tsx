@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { CollectionNav } from "@/components/navigation/collection-nav";
@@ -10,7 +11,7 @@ import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createOutfit, deleteOutfit, getOutfits, updateOutfit } from "@/lib/data/outfits";
 import { getInventoryItems } from "@/lib/data/inventory";
-import { validateOutfit } from "@/lib/outfits";
+import { hasUnavailableOutfitItems, validateOutfit } from "@/lib/outfits";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
 import type { Outfit, OutfitInput } from "@/types/outfit";
@@ -20,15 +21,20 @@ const OUTFITS_SCROLL_KEY = "alikas-wardrobe:outfits-scroll";
 
 export function OutfitsApp() {
   const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
+  const router = useRouter();
   const savedState = useMemo(() => getStoredOutfitsViewState(), []);
   const [outfits, setOutfits] = useState<Outfit[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [query, setQuery] = useState(savedState?.query ?? "");
+  const [availabilityFilter, setAvailabilityFilter] = useState<
+    "" | "complete" | "incomplete" | "has_unavailable_items"
+  >("");
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingOutfit, setEditingOutfit] = useState<Outfit | null>(null);
   const [notice, setNotice] = useState("");
+  const [pendingEditOutfitId, setPendingEditOutfitId] = useState("");
 
   useEffect(() => {
     let isActive = true;
@@ -110,16 +116,43 @@ export function OutfitsApp() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const requestedEditId = params.get("edit") ?? "";
+
+    if (requestedEditId) {
+      setPendingEditOutfitId(requestedEditId);
+    }
+  }, []);
+
   const validatedOutfits = useMemo(
     () => outfits.map((outfit) => validateOutfit(outfit, inventoryItems)),
     [inventoryItems, outfits],
   );
+
+  useEffect(() => {
+    if (!pendingEditOutfitId || outfits.length === 0) {
+      return;
+    }
+
+    const targetOutfit = outfits.find((outfit) => outfit.id === pendingEditOutfitId);
+
+    if (!targetOutfit) {
+      return;
+    }
+
+    setEditingOutfit(targetOutfit);
+    setBuilderOpen(true);
+    setPendingEditOutfitId("");
+    router.replace("/outfits", { scroll: false });
+  }, [outfits, pendingEditOutfitId, router]);
+
   const filteredOutfits = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return validatedOutfits;
-    }
 
     return validatedOutfits.filter((entry) => {
       const fields = [
@@ -131,9 +164,20 @@ export function OutfitsApp() {
         entry.outfit.tags.join(" "),
       ];
 
-      return fields.some((field) => field?.toLowerCase().includes(normalizedQuery));
+      const matchesQuery =
+        !normalizedQuery ||
+        fields.some((field) => field?.toLowerCase().includes(normalizedQuery));
+      const hasUnavailableItems = hasUnavailableOutfitItems(entry);
+      const isIncomplete = hasUnavailableItems;
+      const matchesAvailability =
+        !availabilityFilter ||
+        (availabilityFilter === "complete" && !isIncomplete) ||
+        (availabilityFilter === "incomplete" && isIncomplete) ||
+        (availabilityFilter === "has_unavailable_items" && hasUnavailableItems);
+
+      return matchesQuery && matchesAvailability;
     });
-  }, [query, validatedOutfits]);
+  }, [availabilityFilter, query, validatedOutfits]);
 
   async function handleSaveOutfit(input: OutfitInput, currentId?: string) {
     if (!session) {
@@ -222,6 +266,23 @@ export function OutfitsApp() {
                 placeholder="Search lookbooks"
                 onChange={(event) => setQuery(event.target.value)}
               />
+              <label className="field">
+                <span>Availability</span>
+                <select
+                  className="filter-select"
+                  value={availabilityFilter}
+                  onChange={(event) =>
+                    setAvailabilityFilter(
+                      event.target.value as "" | "complete" | "incomplete" | "has_unavailable_items",
+                    )
+                  }
+                >
+                  <option value="">All lookbooks</option>
+                  <option value="complete">Complete</option>
+                  <option value="incomplete">Incomplete</option>
+                  <option value="has_unavailable_items">Has unavailable items</option>
+                </select>
+              </label>
             </div>
           </div>
 

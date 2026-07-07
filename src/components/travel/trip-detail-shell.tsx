@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import travelCompleteIcon from "../../../images/complete.png";
+import travelInProgressIcon from "../../../images/in-progress.png";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { CollectionNav } from "@/components/navigation/collection-nav";
 import { InternalBackButton } from "@/components/navigation/internal-back-button";
-import { TravelCataloguePanel } from "@/components/travel/travel-catalogue-panel";
+import { TravelCapsuleField } from "@/components/travel/travel-capsule-field";
 import { TravelShellNav } from "@/components/travel/travel-shell-nav";
 import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { DetailGrid } from "@/components/ui/detail-grid";
@@ -34,7 +36,12 @@ import {
   upsertTripWardrobeItemOutfitLinks,
   upsertTripWardrobeItems,
 } from "@/lib/data/travel";
-import { getDisplayImage, normalizeText } from "@/lib/inventory";
+import {
+  getDisplayImage,
+  isInventoryItemAvailableForNewUse,
+  isUnavailableInventoryStatus,
+  normalizeText,
+} from "@/lib/inventory";
 import {
   ESSENTIAL_CATEGORY_OPTIONS,
   formatPackingStatusLabel,
@@ -58,14 +65,13 @@ import type {
   TripWardrobeItemOutfitLink,
 } from "@/types/travel";
 
-type TripStudioTab = "overview" | "looks" | "packing" | "essentials" | "catalogue" | "summary";
+type TripStudioTab = "overview" | "looks" | "packing" | "essentials" | "summary";
 
 const TRIP_STUDIO_TABS: Array<{ id: TripStudioTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "looks", label: "Looks" },
   { id: "packing", label: "Wardrobe Packing" },
   { id: "essentials", label: "Essentials" },
-  { id: "catalogue", label: "Catalogue" },
   { id: "summary", label: "Packed Summary" },
 ];
 
@@ -259,6 +265,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
           row: entry,
           inventoryItem,
           usedInOutfits,
+          isUnavailable: inventoryItem ? isUnavailableInventoryStatus(inventoryItem.status) : true,
         };
       })
       .sort((left, right) => left.row.sort_order - right.row.sort_order);
@@ -284,11 +291,23 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       return matchesQuery && matchesCategory;
     });
   }, [packingCategory, packingQuery, wardrobeEntries]);
+  const unavailableWardrobeEntries = useMemo(
+    () => filteredWardrobeEntries.filter((entry) => entry.isUnavailable),
+    [filteredWardrobeEntries],
+  );
+  const packableWardrobeEntries = useMemo(
+    () => filteredWardrobeEntries.filter((entry) => !entry.isUnavailable),
+    [filteredWardrobeEntries],
+  );
   const manualInventoryOptions = useMemo(() => {
     const packedIds = new Set(wardrobeItems.map((item) => item.wardrobe_item_id));
 
     return inventoryItems.filter((item) => {
       if (packedIds.has(item.item_id)) {
+        return false;
+      }
+
+      if (!isInventoryItemAvailableForNewUse(item)) {
         return false;
       }
 
@@ -349,9 +368,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   }, [wardrobeEntries]);
   const summaryStats = useMemo(() => {
-    const wardrobeTotal = wardrobeItems.length;
-    const wardrobePacked = wardrobeItems.filter((item) => item.packing_status === "packed").length;
-    const wardrobeResolved = wardrobeItems.filter((item) => isPackingStatusResolved(item.packing_status)).length;
+    const availableWardrobeRows = wardrobeEntries.filter((entry) => !entry.isUnavailable).map((entry) => entry.row);
+    const unavailableWardrobeCount = wardrobeEntries.filter((entry) => entry.isUnavailable).length;
+    const wardrobeTotal = availableWardrobeRows.length;
+    const wardrobePacked = availableWardrobeRows.filter((item) => item.packing_status === "packed").length;
+    const wardrobeResolved = availableWardrobeRows.filter((item) => isPackingStatusResolved(item.packing_status)).length;
     const essentialsTotal = tripEssentialItems.length;
     const requiredEssentials = tripEssentialItems.filter((item) => isEssentialRequired(item.inclusion_type));
     const essentialsPacked = tripEssentialItems.filter((item) => item.packing_status === "packed").length;
@@ -362,10 +383,10 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     const totalResolved = wardrobeResolved + essentialsResolved;
     const packedTotal = wardrobePacked + essentialsPacked;
     const notRequiredCount =
-      wardrobeItems.filter((item) => item.packing_status === "not_required").length +
+      availableWardrobeRows.filter((item) => item.packing_status === "not_required").length +
       tripEssentialItems.filter((item) => item.packing_status === "not_required").length;
     const missingCount =
-      wardrobeItems.filter((item) => item.packing_status === "missing").length +
+      availableWardrobeRows.filter((item) => item.packing_status === "missing").length +
       tripEssentialItems.filter((item) => item.packing_status === "missing").length;
     const suitcaseReady = totalRequired > 0 && totalResolved === totalRequired && missingCount === 0;
 
@@ -388,10 +409,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       totalResolved,
       missingCount,
       notRequiredCount,
+      unavailableWardrobeCount,
       optionalEssentials: essentialsTotal - requiredEssentials.length,
       suitcaseReady,
     };
-  }, [selectedOutfitEntries.length, tripEssentialItems, wardrobeItems]);
+  }, [selectedOutfitEntries.length, tripEssentialItems, wardrobeEntries]);
 
   async function refreshTripPacking(nextLinks = tripLinks) {
     if (!session || !trip) {
@@ -403,6 +425,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
 
     try {
       const derivedMap = new Map<string, string[]>();
+      const inventoryMap = new Map(inventoryItems.map((item) => [item.item_id.trim().toUpperCase(), item]));
 
       nextLinks.forEach((tripLink) => {
         const outfit = outfits.find((entry) => entry.id === tripLink.outfit_id);
@@ -424,12 +447,15 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
 
       const upsertRows = [...derivedMap.keys()].map((itemId, index) => {
         const existing = currentByItemId.get(itemId);
+        const inventoryItem = inventoryMap.get(itemId) ?? null;
         return {
           trip_id: trip.id,
           user_id: session.user.id,
           wardrobe_item_id: itemId,
           source: existing?.source ?? "outfit",
-          packing_status: existing?.packing_status ?? "pending",
+          packing_status:
+            existing?.packing_status ??
+            (inventoryItem && !isInventoryItemAvailableForNewUse(inventoryItem) ? "missing" : "pending"),
           notes: existing?.notes ?? null,
           sort_order: index,
         } as const;
@@ -471,13 +497,19 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       const obsoleteLinkIds = currentLinks
         .filter((link) => !desiredPairs.has(`${link.trip_wardrobe_item_id}:${link.trip_outfit_id}`))
         .map((link) => link.id);
+      const existingPairs = new Set(
+        currentLinks.map((link) => `${link.trip_wardrobe_item_id}:${link.trip_outfit_id}`),
+      );
+      const missingLinkRows = desiredLinkRows.filter(
+        (row) => !existingPairs.has(`${row.trip_wardrobe_item_id}:${row.trip_outfit_id}`),
+      );
 
       if (obsoleteLinkIds.length > 0) {
         await deleteTripWardrobeItemOutfitLinks(supabase, obsoleteLinkIds);
       }
 
-      if (desiredLinkRows.length > 0) {
-        await upsertTripWardrobeItemOutfitLinks(supabase, desiredLinkRows);
+      if (missingLinkRows.length > 0) {
+        await upsertTripWardrobeItemOutfitLinks(supabase, missingLinkRows);
       }
 
       const [nextWardrobeItems, nextWardrobeItemLinks] = await Promise.all([
@@ -784,7 +816,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
   const missingSummaryRows = useMemo(
     () => [
       ...wardrobeEntries
-        .filter((entry) => entry.row.packing_status === "missing")
+        .filter((entry) => entry.row.packing_status === "missing" && !entry.isUnavailable)
         .map((entry) => ({
           id: entry.row.id,
           label: entry.inventoryItem?.item_name || entry.row.wardrobe_item_id,
@@ -800,9 +832,20 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     ],
     [tripEssentialItems, wardrobeEntries],
   );
+  const unavailableSummaryRows = useMemo(
+    () =>
+      wardrobeEntries
+        .filter((entry) => entry.isUnavailable)
+        .map((entry) => ({
+          id: entry.row.id,
+          label: entry.inventoryItem?.item_name || entry.row.wardrobe_item_id,
+          meta: `Wardrobe • ${entry.inventoryItem?.status || "Unavailable"}`,
+        })),
+    [wardrobeEntries],
+  );
 
   if (isSessionLoading) {
-    return <BrandedLoadingScreen title="Preparing your trip studio" theme="travel" />;
+    return <BrandedLoadingScreen title="Taking off to Travel Suite" theme="travel" />;
   }
 
   if (!session) {
@@ -810,7 +853,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
   }
 
   if (isLoading) {
-    return <BrandedLoadingScreen title="Preparing your trip studio" theme="travel" />;
+    return <BrandedLoadingScreen title="Taking off to Travel Suite" theme="travel" />;
   }
 
   return (
@@ -900,8 +943,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
 
                 <article className={`detail-card suitcase-ready-card ${summaryStats.suitcaseReady ? "is-complete" : ""}`}>
                   <div className="suitcase-ready-icon" aria-hidden="true">
-                    <span />
-                    <span />
+                    <Image
+                      src={summaryStats.suitcaseReady ? travelCompleteIcon : travelInProgressIcon}
+                      alt=""
+                      className="suitcase-ready-icon-image"
+                    />
                   </div>
                   <div className="suitcase-ready-copy">
                     <p className="eyebrow">{summaryStats.suitcaseReady ? "Suitcase ready" : "Packing in progress"}</p>
@@ -1091,6 +1137,10 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     <strong>{summaryStats.missingCount}</strong>
                     <span>Still missing</span>
                   </article>
+                  <article className="detail-card travel-summary-card">
+                    <strong>{summaryStats.unavailableWardrobeCount}</strong>
+                    <span>Unavailable wardrobe items</span>
+                  </article>
                 </div>
 
                 <div className="travel-shell-grid packing-shell-grid">
@@ -1129,15 +1179,23 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                   </article>
                 </div>
 
-                {filteredWardrobeEntries.length === 0 ? (
+                <TravelCapsuleField
+                  tripId={trip.id}
+                  title="Linked capsule"
+                  description="Optional trip-specific capsule link, folder, or planning note for this packing flow."
+                />
+
+                {packableWardrobeEntries.length === 0 && unavailableWardrobeEntries.length === 0 ? (
                   <EmptyState
                     compact
                     title="No wardrobe items packed yet"
                     description="Select looks or manually add wardrobe pieces to begin packing."
                   />
                 ) : (
-                  <div className="inventory-grid">
-                    {filteredWardrobeEntries.map(({ row, inventoryItem, usedInOutfits }) => {
+                  <>
+                    {packableWardrobeEntries.length > 0 ? (
+                      <div className="inventory-grid">
+                        {packableWardrobeEntries.map(({ row, inventoryItem, usedInOutfits }) => {
                       const imageUrl = inventoryItem ? getDisplayImage(inventoryItem.image) : null;
 
                       return (
@@ -1210,8 +1268,73 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                           </div>
                         </article>
                       );
-                    })}
-                  </div>
+                        })}
+                      </div>
+                    ) : null}
+
+                    {unavailableWardrobeEntries.length > 0 ? (
+                      <article className="detail-card">
+                        <div className="results-copy">
+                          <p className="results-heading">Missing / unavailable</p>
+                          <p>These linked wardrobe pieces are no longer available and are excluded from packable progress.</p>
+                        </div>
+
+                        <div className="inventory-grid unavailable-grid">
+                          {unavailableWardrobeEntries.map(({ row, inventoryItem, usedInOutfits }) => {
+                            const imageUrl = inventoryItem ? getDisplayImage(inventoryItem.image) : null;
+
+                            return (
+                              <article className="inventory-card travel-packing-card is-unavailable" key={row.id}>
+                                <div className="card-image-wrap">
+                                  {imageUrl ? (
+                                    <Image
+                                      src={imageUrl}
+                                      alt={inventoryItem?.item_name || row.wardrobe_item_id}
+                                      fill
+                                      sizes="(max-width: 768px) 50vw, 25vw"
+                                      className="card-image"
+                                    />
+                                  ) : (
+                                    <div className="card-image-fallback">No image available</div>
+                                  )}
+                                </div>
+
+                                <div className="inventory-card-body">
+                                  <div className="inventory-card-copy">
+                                    <p className="sku-label">{row.wardrobe_item_id}</p>
+                                    <h2>{inventoryItem?.item_name || row.wardrobe_item_id}</h2>
+                                    <div className="inventory-card-meta">
+                                      <span>{inventoryItem?.category || "Wardrobe item"}</span>
+                                      <span>{inventoryItem?.status || "Unavailable"}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="travel-item-status-row">
+                                    <span className="trip-status-pill status-missing">Unavailable</span>
+                                  </div>
+
+                                  <div className="travel-used-in">
+                                    <span className="travel-used-in-label">Used in:</span>
+                                    {usedInOutfits.length === 0 ? (
+                                      <span className="trip-meta-pill trip-meta-pill-muted">Manual item</span>
+                                    ) : (
+                                      usedInOutfits.map((outfit) => (
+                                        <span key={outfit.id} className="trip-meta-pill">
+                                          {outfit.title}
+                                        </span>
+                                      ))
+                                    )}
+                                  </div>
+
+                                  <p className="linked-item-warning">This item is no longer available and will not be counted as packable.</p>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </article>
+                    ) : null}
+                  </>
                 )}
 
                 <article className="detail-card">
@@ -1508,12 +1631,6 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
               </div>
             ) : null}
 
-            {activeTab === "catalogue" ? (
-              <div className="travel-shell-grid">
-                <TravelCataloguePanel mode="hub" />
-              </div>
-            ) : null}
-
             {activeTab === "summary" ? (
               <div className="dashboard dashboard-tight">
                 <div className="travel-summary-dashboard">
@@ -1542,8 +1659,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     </div>
                     <div className="travel-summary-banner">
                       <div className="suitcase-ready-icon" aria-hidden="true">
-                        <span />
-                        <span />
+                        <Image
+                          src={summaryStats.suitcaseReady ? travelCompleteIcon : travelInProgressIcon}
+                          alt=""
+                          className="suitcase-ready-icon-image"
+                        />
                       </div>
                       <div className="suitcase-ready-copy">
                         <p className="eyebrow">{summaryStats.suitcaseReady ? "Suitcase ready" : "Still packing"}</p>
@@ -1620,7 +1740,12 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                       </div>
                     </article>
 
-                    <TravelCataloguePanel mode="summary" />
+                    <TravelCapsuleField
+                      tripId={trip.id}
+                      title="Linked capsule"
+                      description="Optional capsule reference saved for this trip."
+                      compact
+                    />
                   </div>
 
                   <div className="travel-shell-grid">
@@ -1693,6 +1818,25 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                           </div>
                         ) : (
                           missingSummaryRows.map((item) => (
+                            <div className="travel-summary-look-row" key={item.id}>
+                              <span>{item.label}</span>
+                              <strong>{item.meta}</strong>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </article>
+
+                    <article className="detail-card">
+                      <p className="eyebrow">Unavailable</p>
+                      <div className="travel-summary-look-list">
+                        {unavailableSummaryRows.length === 0 ? (
+                          <div className="travel-summary-look-row">
+                            <span>No unavailable wardrobe items</span>
+                            <strong>0</strong>
+                          </div>
+                        ) : (
+                          unavailableSummaryRows.map((item) => (
                             <div className="travel-summary-look-row" key={item.id}>
                               <span>{item.label}</span>
                               <strong>{item.meta}</strong>

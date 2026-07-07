@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { SlideOver } from "@/components/ui/slide-over";
 import { TRIP_STATUS_OPTIONS, defaultTripInput } from "@/lib/travel";
@@ -17,6 +17,10 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
   const [draft, setDraft] = useState<TripInput>(defaultTripInput);
   const [errorMessage, setErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const tripStatusOptions = useMemo(
+    () => [...TRIP_STATUS_OPTIONS].sort((left, right) => left.localeCompare(right)),
+    [],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -69,7 +73,7 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
   return (
     <SlideOver
       title={trip ? "Edit trip" : "New trip"}
-      subtitle="Shape the trip first. Packing, essentials, and catalogue support can build naturally from here."
+      subtitle="Shape the trip first. Packing, essentials, and an optional capsule link can build naturally from here."
       open={open}
       onClose={onClose}
       footer={
@@ -100,7 +104,7 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
                 setDraft((current) => ({ ...current, status: event.target.value as TripInput["status"] }))
               }
             >
-              {TRIP_STATUS_OPTIONS.map((option) => (
+              {tripStatusOptions.map((option) => (
                 <option key={option} value={option}>
                   {option.replace("_", " ")}
                 </option>
