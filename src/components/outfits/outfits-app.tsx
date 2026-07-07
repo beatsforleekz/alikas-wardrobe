@@ -19,6 +19,8 @@ import type { Outfit, OutfitInput } from "@/types/outfit";
 const OUTFITS_VIEW_STATE_KEY = "alikas-wardrobe:outfits-view-state";
 const OUTFITS_SCROLL_KEY = "alikas-wardrobe:outfits-scroll";
 
+type OutfitSortOption = "az" | "za" | "most_recent" | "oldest";
+
 export function OutfitsApp() {
   const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
   const router = useRouter();
@@ -28,6 +30,7 @@ export function OutfitsApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [query, setQuery] = useState(savedState?.query ?? "");
+  const [sortBy, setSortBy] = useState<OutfitSortOption>(savedState?.sortBy ?? "az");
   const [availabilityFilter, setAvailabilityFilter] = useState<
     "" | "complete" | "incomplete" | "has_unavailable_items"
   >("");
@@ -82,11 +85,12 @@ export function OutfitsApp() {
 
     window.sessionStorage.setItem(
       OUTFITS_VIEW_STATE_KEY,
-      JSON.stringify({
-        query,
-      }),
+        JSON.stringify({
+          query,
+          sortBy,
+        }),
     );
-  }, [query]);
+  }, [query, sortBy]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -154,7 +158,7 @@ export function OutfitsApp() {
   const filteredOutfits = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return validatedOutfits.filter((entry) => {
+    const filtered = validatedOutfits.filter((entry) => {
       const fields = [
         entry.outfit.title,
         entry.outfit.occasion,
@@ -177,7 +181,28 @@ export function OutfitsApp() {
 
       return matchesQuery && matchesAvailability;
     });
-  }, [availabilityFilter, query, validatedOutfits]);
+
+    return [...filtered].sort((left, right) => {
+      const leftTitle = (left.outfit.title || "").trim().toLowerCase();
+      const rightTitle = (right.outfit.title || "").trim().toLowerCase();
+      const leftCreatedAt = left.outfit.created_at ?? "";
+      const rightCreatedAt = right.outfit.created_at ?? "";
+
+      if (sortBy === "most_recent") {
+        return rightCreatedAt.localeCompare(leftCreatedAt) || leftTitle.localeCompare(rightTitle);
+      }
+
+      if (sortBy === "oldest") {
+        return leftCreatedAt.localeCompare(rightCreatedAt) || leftTitle.localeCompare(rightTitle);
+      }
+
+      if (sortBy === "za") {
+        return rightTitle.localeCompare(leftTitle) || rightCreatedAt.localeCompare(leftCreatedAt);
+      }
+
+      return leftTitle.localeCompare(rightTitle) || rightCreatedAt.localeCompare(leftCreatedAt);
+    });
+  }, [availabilityFilter, query, sortBy, validatedOutfits]);
 
   async function handleSaveOutfit(input: OutfitInput, currentId?: string) {
     if (!session) {
@@ -283,6 +308,19 @@ export function OutfitsApp() {
                   <option value="has_unavailable_items">Has unavailable items</option>
                 </select>
               </label>
+              <label className="field">
+                <span>Sort</span>
+                <select
+                  className="filter-select"
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as OutfitSortOption)}
+                >
+                  <option value="az">A-Z</option>
+                  <option value="za">Z-A</option>
+                  <option value="most_recent">Most recent</option>
+                  <option value="oldest">Oldest</option>
+                </select>
+              </label>
             </div>
           </div>
 
@@ -328,7 +366,7 @@ export function OutfitsApp() {
   );
 }
 
-function getStoredOutfitsViewState(): { query: string } | null {
+function getStoredOutfitsViewState(): { query: string; sortBy: OutfitSortOption } | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -340,10 +378,17 @@ function getStoredOutfitsViewState(): { query: string } | null {
       return null;
     }
 
-    const parsed = JSON.parse(rawValue) as Partial<{ query: string }>;
+    const parsed = JSON.parse(rawValue) as Partial<{ query: string; sortBy: OutfitSortOption }>;
 
     return {
       query: typeof parsed.query === "string" ? parsed.query : "",
+      sortBy:
+        parsed.sortBy === "az" ||
+        parsed.sortBy === "za" ||
+        parsed.sortBy === "most_recent" ||
+        parsed.sortBy === "oldest"
+          ? parsed.sortBy
+          : "az",
     };
   } catch {
     return null;

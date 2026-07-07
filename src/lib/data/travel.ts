@@ -221,20 +221,28 @@ export async function reorderTripOutfitLinks(
   supabase: SupabaseClient,
   links: TripOutfitLink[],
 ) {
-  const updates = links.map((link, index) => ({
-    id: link.id,
-    sort_order: index,
-    look_category_id: link.look_category_id,
-    category_sort_order: link.category_sort_order,
-  }));
-
-  const { data, error } = await supabase.from("trip_outfits").upsert(updates).select("*");
-
-  if (error) {
-    throw new Error(`Failed to reorder trip lookbooks: ${error.message}`);
+  if (links.length === 0) {
+    return [];
   }
 
-  return ((data as TripOutfitLink[] | null) ?? []).map(normalizeTripOutfitLinkRecord);
+  const tripId = links[0]?.trip_id;
+
+  for (const [index, link] of links.entries()) {
+    const { error } = await supabase
+      .from("trip_outfits")
+      .update({
+        sort_order: index,
+        look_category_id: link.look_category_id,
+        category_sort_order: link.category_sort_order,
+      })
+      .eq("id", link.id);
+
+    if (error) {
+      throw new Error(`Failed to reorder trip lookbooks: ${error.message}`);
+    }
+  }
+
+  return getTripOutfitLinks(supabase, tripId);
 }
 
 export async function getTripWardrobeItems(

@@ -339,7 +339,10 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         }
       });
 
-    return [...groups.values()];
+    const uncategorisedGroup = groups.get(UNCAT_LOOK_GROUP_KEY);
+    const customGroups = [...groups.values()].filter((group) => !group.isUncategorised);
+
+    return uncategorisedGroup ? [...customGroups, uncategorisedGroup] : customGroups;
   }, [lookCategories, selectedOutfitEntries]);
   const filteredOutfits = useMemo(() => {
     const normalizedQuery = normalizeText(lookQuery);
@@ -739,6 +742,21 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
 
     const nextLinks = [
       ...tripLinks.filter((link) => link.id !== draggedTripLinkId),
+      { ...movedLink, look_category_id: targetCategoryId },
+    ];
+
+    await persistTripLookOrder(nextLinks);
+  }
+
+  async function handleAssignLookToCategory(linkId: string, targetCategoryId: string | null) {
+    const movedLink = tripLinks.find((link) => link.id === linkId);
+
+    if (!movedLink) {
+      return;
+    }
+
+    const nextLinks = [
+      ...tripLinks.filter((link) => link.id !== linkId),
       { ...movedLink, look_category_id: targetCategoryId },
     ];
 
@@ -1259,32 +1277,55 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     <div className="results-bar">
                       <div className="results-copy">
                         <p className="results-heading">Selected looks</p>
-                        <p>Organise your travel wardrobe into custom look groups.</p>
+                        <p>Build custom trip groups, then assign each look into the right moment.</p>
                       </div>
                     </div>
 
-                    <div className="travel-look-category-create">
-                      <input
-                        className="search-input"
-                        type="text"
-                        value={newLookCategoryName}
-                        placeholder="Add a trip look category"
-                        onChange={(event) => setNewLookCategoryName(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void handleCreateLookCategory();
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => void handleCreateLookCategory()}
-                      >
-                        Add category
-                      </button>
-                    </div>
+                    <article className="travel-look-category-manager">
+                      <div className="travel-look-category-manager-head">
+                        <div>
+                          <p className="eyebrow">Look categories</p>
+                          <h3>Organise selected looks</h3>
+                        </div>
+                        <span className="trip-meta-pill">{lookCategories.length} custom groups</span>
+                      </div>
+
+                      <div className="travel-look-category-create">
+                        <input
+                          className="search-input"
+                          type="text"
+                          value={newLookCategoryName}
+                          placeholder="Add a category like Airport, Dinner, Beach Club"
+                          onChange={(event) => setNewLookCategoryName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void handleCreateLookCategory();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => void handleCreateLookCategory()}
+                        >
+                          Add category
+                        </button>
+                      </div>
+
+                      <div className="travel-look-category-chip-row">
+                        <span className="trip-meta-pill trip-meta-pill-muted">Uncategorised</span>
+                        {lookCategories.map((category) => (
+                          <span key={category.id} className="trip-meta-pill">
+                            {category.name}
+                          </span>
+                        ))}
+                      </div>
+
+                      <p className="travel-look-category-note">
+                        Assign looks with the Group menu on each card, or drag a selected look into a category section below.
+                      </p>
+                    </article>
 
                     {selectedOutfitEntries.length === 0 ? (
                       <EmptyState
@@ -1295,6 +1336,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     ) : (
                       <div className="travel-look-category-board">
                         {selectedLookGroups.map((group, groupIndex) => (
+                          (() => {
+                            const groupCollapseKey = `look-group:${group.id ?? UNCAT_LOOK_GROUP_KEY}`;
+                            const isGroupCollapsed = collapsedCategories[groupCollapseKey] ?? false;
+
+                            return (
                           <section
                             key={group.id ?? UNCAT_LOOK_GROUP_KEY}
                             className="travel-look-category-card"
@@ -1308,6 +1354,18 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                               </div>
                               <div className="travel-look-category-meta">
                                 <span className="trip-meta-pill">{group.entries.length} looks</span>
+                                <button
+                                  type="button"
+                                  className="ghost-button studio-mini-button"
+                                  onClick={() =>
+                                    setCollapsedCategories((current) => ({
+                                      ...current,
+                                      [groupCollapseKey]: !isGroupCollapsed,
+                                    }))
+                                  }
+                                >
+                                  {isGroupCollapsed ? "Expand" : "Collapse"}
+                                </button>
                                 {!group.isUncategorised && group.id ? (
                                   <>
                                     <button
@@ -1353,7 +1411,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                               </div>
                             </div>
 
-                            {group.entries.length === 0 ? (
+                            {isGroupCollapsed ? null : group.entries.length === 0 ? (
                               <div className="travel-look-category-empty">
                                 Drop a selected look here to organise this trip.
                               </div>
@@ -1390,6 +1448,26 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                         <p className="travel-lookbook-meta">
                                           {outfit.occasion || outfit.trip || "Lookbook"} • {outfit.item_ids.length} items
                                         </p>
+                                        <label className="field travel-look-group-field">
+                                          <span>Group</span>
+                                          <select
+                                            className="filter-select"
+                                            value={link.look_category_id ?? ""}
+                                            onChange={(event) =>
+                                              void handleAssignLookToCategory(
+                                                link.id,
+                                                event.target.value || null,
+                                              )
+                                            }
+                                          >
+                                            <option value="">Uncategorised</option>
+                                            {lookCategories.map((category) => (
+                                              <option key={category.id} value={category.id}>
+                                                {category.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </label>
                                         <div className="travel-lookbook-actions">
                                           <Link className="ghost-button studio-mini-button" href={`/outfits/${outfit.id}`}>
                                             Open
@@ -1409,6 +1487,8 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                               </div>
                             )}
                           </section>
+                            );
+                          })()
                         ))}
                       </div>
                     )}
