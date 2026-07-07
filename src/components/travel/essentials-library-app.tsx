@@ -10,13 +10,14 @@ import { TravelShellNav } from "@/components/travel/travel-shell-nav";
 import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
+  createEssentialLibraryItems,
   createEssentialLibraryItem,
   deleteEssentialLibraryItem,
   getEssentialLibraryItems,
   reorderEssentialLibraryItems,
   updateEssentialLibraryItem,
 } from "@/lib/data/travel";
-import { formatEssentialInclusionType } from "@/lib/travel";
+import { formatEssentialInclusionType, STARTER_ESSENTIAL_LIBRARY_ITEMS } from "@/lib/travel";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { EssentialLibraryItem, EssentialLibraryItemInput } from "@/types/travel";
 
@@ -42,7 +43,15 @@ export function EssentialsLibraryApp() {
       setErrorMessage("");
 
       try {
-        const nextItems = await getEssentialLibraryItems(supabase);
+        let nextItems = await getEssentialLibraryItems(supabase);
+
+        if (nextItems.filter((item) => !item.is_archived).length === 0) {
+          nextItems = await createEssentialLibraryItems(
+            supabase,
+            session.user.id,
+            STARTER_ESSENTIAL_LIBRARY_ITEMS,
+          );
+        }
 
         if (isActive) {
           setItems(nextItems.filter((item) => !item.is_archived));
@@ -166,7 +175,7 @@ export function EssentialsLibraryApp() {
   }
 
   if (isSessionLoading) {
-    return <BrandedLoadingScreen title="Preparing your essentials library" />;
+    return <BrandedLoadingScreen title="Preparing your essentials library" theme="travel" />;
   }
 
   if (!session) {
@@ -190,7 +199,7 @@ export function EssentialsLibraryApp() {
           <EmptyState title="Could not load essentials" description={errorMessage} />
         </section>
       ) : isLoading ? (
-        <BrandedLoadingScreen title="Preparing your essentials library" />
+        <BrandedLoadingScreen title="Preparing your essentials library" theme="travel" />
       ) : (
         <section className="dashboard dashboard-tight">
           <div className="results-bar inventory-overview">

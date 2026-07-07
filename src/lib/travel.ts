@@ -97,6 +97,7 @@ export const ESSENTIAL_CATEGORY_OPTIONS = [
   "Electronics",
   "Medication",
   "Toiletries",
+  "Toiletries / Makeup",
   "Beauty",
   "Hair",
   "Sleep",
@@ -128,6 +129,45 @@ export const defaultEssentialLibraryItemInput: EssentialLibraryItemInput = {
   inclusion_type: "usually_include",
   notes: "",
 };
+
+export const STARTER_ESSENTIAL_LIBRARY_ITEMS: EssentialLibraryItemInput[] = [
+  { title: "Neck pillow", category: "Flight", inclusion_type: "optional", notes: "" },
+  { title: "Currency", category: "Flight", inclusion_type: "usually_include", notes: "" },
+  { title: "iPad charged", category: "Flight", inclusion_type: "usually_include", notes: "" },
+  { title: "Pads / tampons", category: "Flight", inclusion_type: "usually_include", notes: "" },
+  { title: "Portable charger", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Travel adaptor", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Passport", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Download shows", category: "Flight", inclusion_type: "optional", notes: "" },
+  { title: "Check-in & boarding pass", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Headphones", category: "Flight", inclusion_type: "usually_include", notes: "" },
+  { title: "Medication paperwork", category: "Flight", inclusion_type: "usually_include", notes: "" },
+  { title: "Charging cables", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Hotel / accommodation details", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Travel insurance", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "ID copy (phone screenshot)", category: "Flight", inclusion_type: "always_include", notes: "" },
+  { title: "Pyjamas", category: "Sleep", inclusion_type: "usually_include", notes: "" },
+  { title: "Bonnet", category: "Sleep", inclusion_type: "usually_include", notes: "" },
+  { title: "Sunhat", category: "Accessories", inclusion_type: "usually_include", notes: "" },
+  { title: "Earrings", category: "Accessories", inclusion_type: "usually_include", notes: "" },
+  { title: "Knickers", category: "Accessories", inclusion_type: "always_include", notes: "" },
+  { title: "Scissors", category: "Accessories", inclusion_type: "optional", notes: "" },
+  { title: "Socks", category: "Accessories", inclusion_type: "always_include", notes: "" },
+  { title: "Sunglasses (4)", category: "Accessories", inclusion_type: "usually_include", notes: "" },
+  { title: "Mosquito spray", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Ziploc bags", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Towel", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Makeup brushes", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Waterproof pouch", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Sunscreen", category: "Toiletries / Makeup", inclusion_type: "always_include", notes: "" },
+  { title: "Fexofenadine", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Hairbands", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Body oil", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Hair oil", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Eyebrow pencil", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+  { title: "Toothbrush", category: "Toiletries / Makeup", inclusion_type: "always_include", notes: "" },
+  { title: "Razors", category: "Toiletries / Makeup", inclusion_type: "usually_include", notes: "" },
+];
 
 export function normalizeTripRecord(row: TripRow): Trip {
   return {
@@ -253,6 +293,29 @@ export function formatTripDateRange(startDate: string | null, endDate: string | 
   }
 
   return start || end || "Dates to be decided";
+}
+
+export function isPackingStatusResolved(status: TripPackingStatus) {
+  return status === "packed" || status === "not_required";
+}
+
+export function isEssentialRequired(
+  inclusionType: EssentialLibraryItem["inclusion_type"] | TripEssentialItem["inclusion_type"],
+) {
+  return inclusionType !== "optional";
+}
+
+export function formatPackingStatusLabel(status: TripPackingStatus) {
+  switch (status) {
+    case "packed":
+      return "Packed";
+    case "not_required":
+      return "Not required";
+    case "missing":
+      return "Missing";
+    default:
+      return "Pending";
+  }
 }
 
 export function formatTripStatus(status: TripStatus) {

@@ -15,6 +15,7 @@ import { getInventoryItems } from "@/lib/data/inventory";
 import { getOutfits } from "@/lib/data/outfits";
 import {
   addTripOutfitLink,
+  createEssentialLibraryItems,
   createTripEssentialItems,
   deleteTripOutfitLink,
   deleteTripWardrobeItemOutfitLinks,
@@ -30,7 +31,11 @@ import {
   upsertTripWardrobeItems,
 } from "@/lib/data/travel";
 import { getDisplayImage, normalizeText } from "@/lib/inventory";
-import { formatEssentialInclusionType, formatTripDateRange } from "@/lib/travel";
+import {
+  formatEssentialInclusionType,
+  formatTripDateRange,
+  STARTER_ESSENTIAL_LIBRARY_ITEMS,
+} from "@/lib/travel";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
 import type { Outfit } from "@/types/outfit";
@@ -86,6 +91,16 @@ export function TravelPackingApp({ initialTripId = "" }: TravelPackingAppProps) 
           getEssentialLibraryItems(supabase),
         ]);
 
+        let resolvedLibraryItems = nextLibraryItems.filter((item) => !item.is_archived);
+
+        if (resolvedLibraryItems.length === 0) {
+          resolvedLibraryItems = await createEssentialLibraryItems(
+            supabase,
+            session.user.id,
+            STARTER_ESSENTIAL_LIBRARY_ITEMS,
+          );
+        }
+
         if (!isActive) {
           return;
         }
@@ -94,7 +109,7 @@ export function TravelPackingApp({ initialTripId = "" }: TravelPackingAppProps) 
         setOutfits(nextOutfits);
         setInventoryItems(nextInventory);
         setTripLinks(nextTripLinks);
-        setEssentialLibraryItems(nextLibraryItems.filter((item) => !item.is_archived));
+        setEssentialLibraryItems(resolvedLibraryItems);
 
         const resolvedTripId =
           nextTrips.find((trip) => trip.id === initialTripId)?.id ??
@@ -490,7 +505,7 @@ export function TravelPackingApp({ initialTripId = "" }: TravelPackingAppProps) 
   }
 
   if (isSessionLoading) {
-    return <BrandedLoadingScreen title="Preparing your packing wardrobe" />;
+    return <BrandedLoadingScreen title="Preparing your packing wardrobe" theme="travel" />;
   }
 
   if (!session) {
@@ -514,7 +529,7 @@ export function TravelPackingApp({ initialTripId = "" }: TravelPackingAppProps) 
           <EmptyState title="Could not load packing" description={errorMessage} />
         </section>
       ) : isLoading ? (
-        <BrandedLoadingScreen title="Preparing your packing wardrobe" />
+        <BrandedLoadingScreen title="Preparing your packing wardrobe" theme="travel" />
       ) : trips.length === 0 ? (
         <section className="dashboard">
           <EmptyState

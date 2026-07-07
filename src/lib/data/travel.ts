@@ -311,6 +311,32 @@ export async function createEssentialLibraryItem(
   return normalizeEssentialLibraryItemRecord(data as EssentialLibraryItem);
 }
 
+export async function createEssentialLibraryItems(
+  supabase: SupabaseClient,
+  userId: string,
+  inputs: EssentialLibraryItemInput[],
+) {
+  if (inputs.length === 0) {
+    return [] as EssentialLibraryItem[];
+  }
+
+  const payload = inputs.map((input) => ({
+    ...sanitizeEssentialLibraryItemInput(input),
+    user_id: userId,
+  }));
+
+  const { data, error } = await supabase
+    .from("essentials_library_items")
+    .insert(payload)
+    .select("*");
+
+  if (error) {
+    throw new Error(`Failed to create essentials items: ${error.message}`);
+  }
+
+  return ((data as EssentialLibraryItem[] | null) ?? []).map(normalizeEssentialLibraryItemRecord);
+}
+
 export async function updateEssentialLibraryItem(
   supabase: SupabaseClient,
   itemId: string,
@@ -420,6 +446,14 @@ export async function updateTripEssentialItem(
   }
 
   return normalizeTripEssentialItemRecord(data as TripEssentialItem);
+}
+
+export async function deleteTripEssentialItem(supabase: SupabaseClient, itemId: string) {
+  const { error } = await supabase.from("trip_essential_items").delete().eq("id", itemId);
+
+  if (error) {
+    throw new Error(`Failed to delete trip essential: ${error.message}`);
+  }
 }
 
 export async function reorderTripEssentialItems(

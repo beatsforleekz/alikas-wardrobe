@@ -97,7 +97,7 @@ export function TripsApp() {
   }
 
   if (isSessionLoading) {
-    return <BrandedLoadingScreen title="Preparing your travel suite" />;
+    return <BrandedLoadingScreen title="Preparing your travel suite" theme="travel" />;
   }
 
   if (!session) {
@@ -120,7 +120,7 @@ export function TripsApp() {
           <EmptyState title="Could not load trips" description={errorMessage} />
         </section>
       ) : isLoading ? (
-        <BrandedLoadingScreen title="Preparing your travel suite" />
+        <BrandedLoadingScreen title="Preparing your travel suite" theme="travel" />
       ) : (
         <section className="dashboard dashboard-tight">
           <div className="results-bar inventory-overview">
