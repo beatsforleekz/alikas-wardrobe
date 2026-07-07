@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   normalizeEssentialLibraryItemRecord,
   normalizeTripEssentialItemRecord,
+  normalizeTripLookCategoryRecord,
   normalizeTripOutfitLinkRecord,
   normalizeTripRecord,
   normalizeTripWardrobeItemOutfitLinkRecord,
@@ -16,6 +17,7 @@ import type {
   Trip,
   TripEssentialItem,
   TripInput,
+  TripLookCategory,
   TripOutfitLink,
   TripWardrobeItem,
   TripWardrobeItemOutfitLink,
@@ -100,12 +102,92 @@ export async function getTripOutfitLinks(
   return ((data as TripOutfitLink[] | null) ?? []).map(normalizeTripOutfitLinkRecord);
 }
 
+export async function getTripLookCategories(
+  supabase: SupabaseClient,
+  tripId: string,
+): Promise<TripLookCategory[]> {
+  const { data, error } = await supabase
+    .from("trip_look_categories")
+    .select("*")
+    .eq("trip_id", tripId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load trip look categories: ${error.message}`);
+  }
+
+  return ((data as TripLookCategory[] | null) ?? []).map(normalizeTripLookCategoryRecord);
+}
+
+export async function createTripLookCategory(
+  supabase: SupabaseClient,
+  userId: string,
+  tripId: string,
+  name: string,
+  sortOrder: number,
+) {
+  const { data, error } = await supabase
+    .from("trip_look_categories")
+    .insert({
+      user_id: userId,
+      trip_id: tripId,
+      name: name.trim(),
+      sort_order: sortOrder,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create trip look category: ${error.message}`);
+  }
+
+  return normalizeTripLookCategoryRecord(data as TripLookCategory);
+}
+
+export async function updateTripLookCategory(
+  supabase: SupabaseClient,
+  categoryId: string,
+  input: Partial<Pick<TripLookCategory, "name" | "sort_order">>,
+) {
+  const payload = {
+    ...(typeof input.name === "string" ? { name: input.name.trim() } : {}),
+    ...(typeof input.sort_order === "number" ? { sort_order: input.sort_order } : {}),
+  };
+
+  const { data, error } = await supabase
+    .from("trip_look_categories")
+    .update(payload)
+    .eq("id", categoryId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update trip look category: ${error.message}`);
+  }
+
+  return normalizeTripLookCategoryRecord(data as TripLookCategory);
+}
+
+export async function deleteTripLookCategory(
+  supabase: SupabaseClient,
+  categoryId: string,
+) {
+  const { error } = await supabase.from("trip_look_categories").delete().eq("id", categoryId);
+
+  if (error) {
+    throw new Error(`Failed to delete trip look category: ${error.message}`);
+  }
+}
+
 export async function addTripOutfitLink(
   supabase: SupabaseClient,
   userId: string,
   tripId: string,
   outfitId: string,
   sortOrder: number,
+  lookCategoryId?: string | null,
+  categorySortOrder?: number,
 ) {
   const { data, error } = await supabase
     .from("trip_outfits")
@@ -113,7 +195,9 @@ export async function addTripOutfitLink(
       user_id: userId,
       trip_id: tripId,
       outfit_id: outfitId,
+      look_category_id: lookCategoryId ?? null,
       sort_order: sortOrder,
+      category_sort_order: categorySortOrder ?? sortOrder,
     })
     .select("*")
     .single();
@@ -140,6 +224,8 @@ export async function reorderTripOutfitLinks(
   const updates = links.map((link, index) => ({
     id: link.id,
     sort_order: index,
+    look_category_id: link.look_category_id,
+    category_sort_order: link.category_sort_order,
   }));
 
   const { data, error } = await supabase.from("trip_outfits").upsert(updates).select("*");

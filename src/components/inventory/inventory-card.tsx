@@ -72,28 +72,28 @@ export function InventoryCard({
 
       {onQuickEdit ? (
         <div className="inventory-card-actions">
-          <button type="button" className="ghost-button" onClick={onQuickEdit}>
-            Quick edit
+          <button type="button" className="ghost-button studio-mini-button inventory-action-button" onClick={onQuickEdit}>
+            Edit item
           </button>
           {onStatusChange ? (
             <>
               <button
                 type="button"
-                className="ghost-button studio-mini-button"
+                className="ghost-button studio-mini-button inventory-action-button"
                 onClick={() => onStatusChange("Returned")}
               >
-                Mark returned
+                Returned
               </button>
               <button
                 type="button"
-                className="ghost-button studio-mini-button"
+                className="ghost-button studio-mini-button inventory-action-button"
                 onClick={() => onStatusChange("Discarded")}
               >
-                Mark discarded
+                Discarded
               </button>
               <button
                 type="button"
-                className="ghost-button studio-mini-button"
+                className="ghost-button studio-mini-button inventory-action-button"
                 onClick={() => onStatusChange("Archived")}
               >
                 Archive

@@ -3,6 +3,7 @@ import type {
   EssentialLibraryItemInput,
   Trip,
   TripInput,
+  TripLookCategory,
   TripOutfitLink,
   TripPackingStatus,
   TripStatus,
@@ -31,6 +32,18 @@ type TripOutfitLinkRow = {
   trip_id: string;
   user_id: string | null;
   outfit_id: string;
+  look_category_id?: string | null;
+  sort_order: number | null;
+  category_sort_order?: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type TripLookCategoryRow = {
+  id: string;
+  trip_id: string;
+  user_id: string | null;
+  name: string | null;
   sort_order: number | null;
   created_at: string | null;
   updated_at: string | null;
@@ -192,6 +205,20 @@ export function normalizeTripOutfitLinkRecord(row: TripOutfitLinkRow): TripOutfi
     trip_id: row.trip_id,
     user_id: row.user_id,
     outfit_id: row.outfit_id,
+    look_category_id: row.look_category_id ?? null,
+    sort_order: row.sort_order ?? 0,
+    category_sort_order: row.category_sort_order ?? 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function normalizeTripLookCategoryRecord(row: TripLookCategoryRow): TripLookCategory {
+  return {
+    id: row.id,
+    trip_id: row.trip_id,
+    user_id: row.user_id,
+    name: row.name?.trim() || "Untitled category",
     sort_order: row.sort_order ?? 0,
     created_at: row.created_at,
     updated_at: row.updated_at,

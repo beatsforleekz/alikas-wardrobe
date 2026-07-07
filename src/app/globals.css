@@ -1367,6 +1367,60 @@ button {
   gap: 1rem;
 }
 
+.travel-look-category-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.travel-look-category-board {
+  display: grid;
+  gap: 1rem;
+}
+
+.travel-look-category-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 28px;
+  border: 1px solid rgba(120, 109, 98, 0.12);
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: 0 18px 40px rgba(36, 26, 16, 0.04);
+}
+
+.travel-look-category-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.travel-look-category-head h3 {
+  margin: 0.2rem 0 0;
+  font-size: 1.18rem;
+  line-height: 1.2;
+}
+
+.travel-look-category-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.travel-look-category-empty {
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+  border: 1px dashed rgba(120, 109, 98, 0.18);
+  background: rgba(248, 244, 238, 0.65);
+  color: var(--muted-text);
+  font-size: 0.95rem;
+}
+
 .travel-lookbook-card {
   display: grid;
   gap: 0.8rem;
@@ -1957,8 +2011,21 @@ button {
 .outfit-card-actions,
 .inventory-card-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
   justify-content: flex-end;
   padding: 0 0.2rem;
+}
+
+.inventory-card-actions {
+  align-items: center;
+}
+
+.inventory-action-button {
+  min-height: 30px;
+  padding: 0.38rem 0.62rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
 }
 
 .inventory-card-select {

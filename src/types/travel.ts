@@ -31,6 +31,18 @@ export type TripOutfitLink = {
   trip_id: string;
   user_id: string | null;
   outfit_id: string;
+  look_category_id: string | null;
+  sort_order: number;
+  category_sort_order: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type TripLookCategory = {
+  id: string;
+  trip_id: string;
+  user_id: string | null;
+  name: string;
   sort_order: number;
   created_at: string | null;
   updated_at: string | null;

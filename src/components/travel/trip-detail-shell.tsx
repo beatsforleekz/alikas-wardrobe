@@ -19,19 +19,23 @@ import { getOutfits } from "@/lib/data/outfits";
 import {
   addTripOutfitLink,
   createEssentialLibraryItems,
+  createTripLookCategory,
   createTripEssentialItems,
   deleteTripEssentialItem,
+  deleteTripLookCategory,
   deleteTripOutfitLink,
   deleteTripWardrobeItemOutfitLinks,
   deleteTripWardrobeItems,
   getEssentialLibraryItems,
   getTripById,
+  getTripLookCategories,
   getTripEssentialItems,
   getTripOutfitLinks,
   getTripWardrobeItemOutfitLinks,
   getTripWardrobeItems,
   reorderTripEssentialItems,
   reorderTripOutfitLinks,
+  updateTripLookCategory,
   updateTripEssentialItem,
   upsertTripWardrobeItemOutfitLinks,
   upsertTripWardrobeItems,
@@ -60,6 +64,7 @@ import type {
   EssentialLibraryItem,
   Trip,
   TripEssentialItem,
+  TripLookCategory,
   TripOutfitLink,
   TripWardrobeItem,
   TripWardrobeItemOutfitLink,
@@ -85,18 +90,78 @@ const emptyEssentialDraft: EssentialDraft = {
   notes: "",
 };
 
+type SelectedOutfitEntry = {
+  link: TripOutfitLink;
+  outfit: Outfit;
+};
+
+type TripLookGroup = {
+  id: string | null;
+  name: string;
+  sortOrder: number;
+  isUncategorised: boolean;
+  entries: SelectedOutfitEntry[];
+};
+
+const UNCAT_LOOK_GROUP_KEY = "__uncategorised__";
+
+function getLookGroupKey(categoryId: string | null) {
+  return categoryId ?? UNCAT_LOOK_GROUP_KEY;
+}
+
+function sortTripLinksWithinGroups(
+  links: TripOutfitLink[],
+  categories: TripLookCategory[],
+) {
+  const grouped = new Map<string, TripOutfitLink[]>();
+
+  links.forEach((link) => {
+    const key = getLookGroupKey(link.look_category_id);
+    const current = grouped.get(key) ?? [];
+    grouped.set(
+      key,
+      [...current, link].sort(
+        (left, right) =>
+          left.category_sort_order - right.category_sort_order || left.sort_order - right.sort_order,
+      ),
+    );
+  });
+
+  const ordered = [
+    ...(grouped.get(UNCAT_LOOK_GROUP_KEY) ?? []),
+    ...[...categories]
+      .sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name))
+      .flatMap((category) => grouped.get(category.id) ?? []),
+  ];
+
+  return ordered.map((link, index) => {
+    const categoryLinks = ordered.filter(
+      (entry) => entry.look_category_id === link.look_category_id,
+    );
+    const categorySortOrder = categoryLinks.findIndex((entry) => entry.id === link.id);
+
+    return {
+      ...link,
+      sort_order: index,
+      category_sort_order: categorySortOrder === -1 ? 0 : categorySortOrder,
+    };
+  });
+}
+
 export function TripDetailShell({ tripId }: { tripId: string }) {
   const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [outfits, setOutfits] = useState<Outfit[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [tripLinks, setTripLinks] = useState<TripOutfitLink[]>([]);
+  const [lookCategories, setLookCategories] = useState<TripLookCategory[]>([]);
   const [wardrobeItems, setWardrobeItems] = useState<TripWardrobeItem[]>([]);
   const [wardrobeItemLinks, setWardrobeItemLinks] = useState<TripWardrobeItemOutfitLink[]>([]);
   const [essentialLibraryItems, setEssentialLibraryItems] = useState<EssentialLibraryItem[]>([]);
   const [tripEssentialItems, setTripEssentialItems] = useState<TripEssentialItem[]>([]);
   const [activeTab, setActiveTab] = useState<TripStudioTab>("overview");
   const [lookQuery, setLookQuery] = useState("");
+  const [newLookCategoryName, setNewLookCategoryName] = useState("");
   const [packingQuery, setPackingQuery] = useState("");
   const [packingCategory, setPackingCategory] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
@@ -128,6 +193,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
           nextOutfits,
           nextInventory,
           nextTripLinks,
+          nextLookCategories,
           nextWardrobeItems,
           nextWardrobeItemLinks,
           nextLibraryItems,
@@ -137,6 +203,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
           getOutfits(supabase),
           getInventoryItems(supabase),
           getTripOutfitLinks(supabase, tripId),
+          getTripLookCategories(supabase, tripId),
           getTripWardrobeItems(supabase, tripId),
           getTripWardrobeItemOutfitLinks(supabase, tripId),
           getEssentialLibraryItems(supabase),
@@ -186,7 +253,8 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         setTrip(nextTrip);
         setOutfits(nextOutfits);
         setInventoryItems(nextInventory);
-        setTripLinks(nextTripLinks);
+        setTripLinks(sortTripLinksWithinGroups(nextTripLinks, nextLookCategories));
+        setLookCategories(nextLookCategories);
         setWardrobeItems(nextWardrobeItems);
         setWardrobeItemLinks(nextWardrobeItemLinks);
         setEssentialLibraryItems(activeLibraryItems);
@@ -230,13 +298,57 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
           link,
           outfit: outfits.find((outfit) => outfit.id === link.outfit_id) ?? null,
         }))
-        .filter((entry): entry is { link: TripOutfitLink; outfit: Outfit } => Boolean(entry.outfit)),
+        .filter((entry): entry is SelectedOutfitEntry => Boolean(entry.outfit)),
     [outfits, tripLinks],
   );
+  const selectedLookGroups = useMemo<TripLookGroup[]>(() => {
+    const groups = new Map<string, TripLookGroup>();
+
+    groups.set(UNCAT_LOOK_GROUP_KEY, {
+      id: null,
+      name: "Uncategorised",
+      sortOrder: -1,
+      isUncategorised: true,
+      entries: [],
+    });
+
+    [...lookCategories]
+      .sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name))
+      .forEach((category) => {
+        groups.set(category.id, {
+          id: category.id,
+          name: category.name,
+          sortOrder: category.sort_order,
+          isUncategorised: false,
+          entries: [],
+        });
+      });
+
+    [...selectedOutfitEntries]
+      .sort(
+        (left, right) =>
+          left.link.category_sort_order - right.link.category_sort_order ||
+          left.link.sort_order - right.link.sort_order,
+      )
+      .forEach((entry) => {
+        const key = getLookGroupKey(entry.link.look_category_id);
+        const group = groups.get(key);
+
+        if (group) {
+          group.entries.push(entry);
+        }
+      });
+
+    return [...groups.values()];
+  }, [lookCategories, selectedOutfitEntries]);
   const filteredOutfits = useMemo(() => {
     const normalizedQuery = normalizeText(lookQuery);
 
     return outfits.filter((outfit) => {
+      if (selectedOutfitIds.has(outfit.id)) {
+        return false;
+      }
+
       if (!normalizedQuery) {
         return true;
       }
@@ -245,7 +357,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         .filter(Boolean)
         .some((field) => normalizeText(field).includes(normalizedQuery));
     });
-  }, [lookQuery, outfits]);
+  }, [lookQuery, outfits, selectedOutfitIds]);
   const wardrobeEntries = useMemo(() => {
     const inventoryMap = new Map(inventoryItems.map((item) => [item.item_id, item]));
     const outfitMap = new Map(outfits.map((outfit) => [outfit.id, outfit]));
@@ -551,39 +663,204 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       trip.id,
       outfit.id,
       tripLinks.length,
+      null,
+      selectedOutfitEntries.filter((entry) => entry.link.look_category_id === null).length,
     );
     const nextLinks = [...tripLinks, nextLink];
-    setTripLinks(nextLinks);
+    setTripLinks(sortTripLinksWithinGroups(nextLinks, lookCategories));
     await refreshTripPacking(nextLinks);
     setNotice(`${outfit.title} added to this trip.`);
   }
 
-  async function handleReorderSelectedOutfits(targetLinkId: string) {
-    if (!draggedTripLinkId || draggedTripLinkId === targetLinkId) {
-      setDraggedTripLinkId("");
-      return;
-    }
-
-    const currentIndex = tripLinks.findIndex((link) => link.id === draggedTripLinkId);
-    const targetIndex = tripLinks.findIndex((link) => link.id === targetLinkId);
-
-    if (currentIndex === -1 || targetIndex === -1) {
-      setDraggedTripLinkId("");
-      return;
-    }
-
-    const nextSelected = [...tripLinks];
-    const [moved] = nextSelected.splice(currentIndex, 1);
-    nextSelected.splice(targetIndex, 0, moved);
-    const resequenced = nextSelected.map((link, index) => ({ ...link, sort_order: index }));
+  async function persistTripLookOrder(nextLinks: TripOutfitLink[]) {
+    const resequenced = sortTripLinksWithinGroups(nextLinks, lookCategories);
     setTripLinks(resequenced);
     setDraggedTripLinkId("");
 
     try {
       const persisted = await reorderTripOutfitLinks(supabase, resequenced);
-      setTripLinks(persisted.sort((left, right) => left.sort_order - right.sort_order));
+      setTripLinks(sortTripLinksWithinGroups(persisted, lookCategories));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to reorder looks.");
+    }
+  }
+
+  async function handleDropOnLook(targetLinkId: string, targetCategoryId: string | null) {
+    if (!draggedTripLinkId) {
+      return;
+    }
+
+    if (draggedTripLinkId === targetLinkId) {
+      setDraggedTripLinkId("");
+      return;
+    }
+
+    const movedLink = tripLinks.find((link) => link.id === draggedTripLinkId);
+    const targetLink = tripLinks.find((link) => link.id === targetLinkId);
+
+    if (!movedLink || !targetLink) {
+      setDraggedTripLinkId("");
+      return;
+    }
+
+    const targetGroupEntries = selectedOutfitEntries.filter(
+      (entry) => entry.link.look_category_id === targetCategoryId && entry.link.id !== draggedTripLinkId,
+    );
+    const targetIndex = targetGroupEntries.findIndex((entry) => entry.link.id === targetLink.id);
+    const nextGroupLinks = [...targetGroupEntries.map((entry) => entry.link)];
+    nextGroupLinks.splice(
+      targetIndex === -1 ? nextGroupLinks.length : targetIndex,
+      0,
+      { ...movedLink, look_category_id: targetCategoryId },
+    );
+
+    const nextLinks = tripLinks
+      .filter(
+        (link) =>
+          link.id !== draggedTripLinkId &&
+          !(link.look_category_id === targetCategoryId && link.id !== draggedTripLinkId),
+      )
+      .concat(nextGroupLinks);
+
+    await persistTripLookOrder(nextLinks);
+  }
+
+  async function handleDropOnCategory(targetCategoryId: string | null) {
+    if (!draggedTripLinkId) {
+      return;
+    }
+
+    const movedLink = tripLinks.find((link) => link.id === draggedTripLinkId);
+
+    if (!movedLink) {
+      setDraggedTripLinkId("");
+      return;
+    }
+
+    const nextLinks = [
+      ...tripLinks.filter((link) => link.id !== draggedTripLinkId),
+      { ...movedLink, look_category_id: targetCategoryId },
+    ];
+
+    await persistTripLookOrder(nextLinks);
+  }
+
+  async function handleCreateLookCategory() {
+    if (!session || !trip || !newLookCategoryName.trim()) {
+      return;
+    }
+
+    try {
+      const created = await createTripLookCategory(
+        supabase,
+        session.user.id,
+        trip.id,
+        newLookCategoryName,
+        lookCategories.length,
+      );
+      setLookCategories((current) =>
+        [...current, created].sort((left, right) => left.sort_order - right.sort_order),
+      );
+      setNewLookCategoryName("");
+      setNotice(`${created.name} added to this trip.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to create look category.");
+    }
+  }
+
+  async function handleMoveLookCategory(categoryId: string, direction: -1 | 1) {
+    const currentIndex = lookCategories.findIndex((category) => category.id === categoryId);
+    const targetIndex = currentIndex + direction;
+
+    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= lookCategories.length) {
+      return;
+    }
+
+    const nextCategories = [...lookCategories];
+    const [moved] = nextCategories.splice(currentIndex, 1);
+    nextCategories.splice(targetIndex, 0, moved);
+    const resequenced = nextCategories.map((category, index) => ({
+      ...category,
+      sort_order: index,
+    }));
+
+    setLookCategories(resequenced);
+
+    try {
+      const persisted = await Promise.all(
+        resequenced.map((category) =>
+          updateTripLookCategory(supabase, category.id, { sort_order: category.sort_order }),
+        ),
+      );
+      setLookCategories(persisted.sort((left, right) => left.sort_order - right.sort_order));
+      setTripLinks((current) => sortTripLinksWithinGroups(current, persisted));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to reorder look categories.");
+    }
+  }
+
+  async function handleRenameLookCategory(category: TripLookCategory) {
+    const nextName = window.prompt("Rename this look category.", category.name)?.trim();
+
+    if (!nextName || nextName === category.name) {
+      return;
+    }
+
+    try {
+      const updated = await updateTripLookCategory(supabase, category.id, { name: nextName });
+      setLookCategories((current) =>
+        current.map((entry) => (entry.id === category.id ? updated : entry)),
+      );
+      setNotice(`${category.name} renamed to ${updated.name}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to rename look category.");
+    }
+  }
+
+  async function handleDeleteLookCategory(category: TripLookCategory) {
+    const action = window
+      .prompt(
+        `Remove "${category.name}". Type "uncategorized" to move looks into Uncategorised, "remove" to remove those looks from the trip, or leave blank to cancel.`,
+        "uncategorized",
+      )
+      ?.trim()
+      .toLowerCase();
+
+    if (!action) {
+      return;
+    }
+
+    const affectedLinks = tripLinks.filter((link) => link.look_category_id === category.id);
+
+    try {
+      if (action === "remove") {
+        await Promise.all(affectedLinks.map((link) => deleteTripOutfitLink(supabase, link.id)));
+        const nextLinks = tripLinks.filter((link) => link.look_category_id !== category.id);
+        await deleteTripLookCategory(supabase, category.id);
+        const nextCategories = lookCategories.filter((entry) => entry.id !== category.id);
+        setLookCategories(nextCategories);
+        setTripLinks(sortTripLinksWithinGroups(nextLinks, nextCategories));
+        await refreshTripPacking(nextLinks);
+        setNotice(`${category.name} removed, along with its selected looks.`);
+        return;
+      }
+
+      if (action !== "uncategorized") {
+        return;
+      }
+
+      const nextCategories = lookCategories.filter((entry) => entry.id !== category.id);
+      const nextLinks = tripLinks.map((link) =>
+        link.look_category_id === category.id ? { ...link, look_category_id: null } : link,
+      );
+      const resequenced = sortTripLinksWithinGroups(nextLinks, nextCategories);
+      await reorderTripOutfitLinks(supabase, resequenced);
+      await deleteTripLookCategory(supabase, category.id);
+      setLookCategories(nextCategories);
+      setTripLinks(resequenced);
+      setNotice(`${category.name} removed. Its looks were moved to Uncategorised.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to remove look category.");
     }
   }
 
@@ -982,8 +1259,31 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     <div className="results-bar">
                       <div className="results-copy">
                         <p className="results-heading">Selected looks</p>
-                        <p>Drag to reorder your trip looks.</p>
+                        <p>Organise your travel wardrobe into custom look groups.</p>
                       </div>
+                    </div>
+
+                    <div className="travel-look-category-create">
+                      <input
+                        className="search-input"
+                        type="text"
+                        value={newLookCategoryName}
+                        placeholder="Add a trip look category"
+                        onChange={(event) => setNewLookCategoryName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void handleCreateLookCategory();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => void handleCreateLookCategory()}
+                      >
+                        Add category
+                      </button>
                     </div>
 
                     {selectedOutfitEntries.length === 0 ? (
@@ -993,54 +1293,123 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                         description="Choose outfits below to start building the trip wardrobe."
                       />
                     ) : (
-                      <div className="travel-lookbook-board">
-                        {selectedOutfitEntries.map(({ link, outfit }) => {
-                          const imageUrl = getOutfitDisplayImage(outfit);
+                      <div className="travel-look-category-board">
+                        {selectedLookGroups.map((group, groupIndex) => (
+                          <section
+                            key={group.id ?? UNCAT_LOOK_GROUP_KEY}
+                            className="travel-look-category-card"
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={() => void handleDropOnCategory(group.id)}
+                          >
+                            <div className="travel-look-category-head">
+                              <div>
+                                <p className="eyebrow">{group.isUncategorised ? "Default group" : "Trip look category"}</p>
+                                <h3>{group.name}</h3>
+                              </div>
+                              <div className="travel-look-category-meta">
+                                <span className="trip-meta-pill">{group.entries.length} looks</span>
+                                {!group.isUncategorised && group.id ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="ghost-button studio-mini-button"
+                                      onClick={() => void handleMoveLookCategory(group.id!, -1)}
+                                      disabled={groupIndex === 1}
+                                    >
+                                      Up
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ghost-button studio-mini-button"
+                                      onClick={() => void handleMoveLookCategory(group.id!, 1)}
+                                      disabled={groupIndex === selectedLookGroups.length - 1}
+                                    >
+                                      Down
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ghost-button studio-mini-button"
+                                      onClick={() =>
+                                        void handleRenameLookCategory(
+                                          lookCategories.find((category) => category.id === group.id)!,
+                                        )
+                                      }
+                                    >
+                                      Rename
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ghost-button studio-mini-button"
+                                      onClick={() =>
+                                        void handleDeleteLookCategory(
+                                          lookCategories.find((category) => category.id === group.id)!,
+                                        )
+                                      }
+                                    >
+                                      Remove
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
 
-                          return (
-                            <article
-                              key={link.id}
-                              className="travel-lookbook-card is-selected"
-                              draggable
-                              onDragStart={() => setDraggedTripLinkId(link.id)}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={() => void handleReorderSelectedOutfits(link.id)}
-                            >
-                              <div className="travel-lookbook-media">
-                                {imageUrl ? (
-                                  <Image
-                                    src={imageUrl}
-                                    alt={outfit.title}
-                                    fill
-                                    sizes="(max-width: 768px) 50vw, 20vw"
-                                    className="travel-lookbook-image"
-                                  />
-                                ) : (
-                                  <div className="card-image-fallback">No image available</div>
-                                )}
+                            {group.entries.length === 0 ? (
+                              <div className="travel-look-category-empty">
+                                Drop a selected look here to organise this trip.
                               </div>
-                              <div className="travel-lookbook-body">
-                                <p className="sku-label">Selected look</p>
-                                <h3>{outfit.title}</h3>
-                                <p className="travel-lookbook-meta">
-                                  {outfit.occasion || outfit.trip || "Lookbook"} • {outfit.item_ids.length} items
-                                </p>
-                                <div className="travel-lookbook-actions">
-                                  <Link className="ghost-button studio-mini-button" href={`/outfits/${outfit.id}`}>
-                                    Open
-                                  </Link>
-                                  <button
-                                    type="button"
-                                    className="ghost-button studio-mini-button"
-                                    onClick={() => void handleToggleOutfit(outfit)}
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
+                            ) : (
+                              <div className="travel-lookbook-board">
+                                {group.entries.map(({ link, outfit }) => {
+                                  const imageUrl = getOutfitDisplayImage(outfit);
+
+                                  return (
+                                    <article
+                                      key={link.id}
+                                      className="travel-lookbook-card is-selected"
+                                      draggable
+                                      onDragStart={() => setDraggedTripLinkId(link.id)}
+                                      onDragOver={(event) => event.preventDefault()}
+                                      onDrop={() => void handleDropOnLook(link.id, group.id)}
+                                    >
+                                      <div className="travel-lookbook-media">
+                                        {imageUrl ? (
+                                          <Image
+                                            src={imageUrl}
+                                            alt={outfit.title}
+                                            fill
+                                            sizes="(max-width: 768px) 50vw, 20vw"
+                                            className="travel-lookbook-image"
+                                          />
+                                        ) : (
+                                          <div className="card-image-fallback">No image available</div>
+                                        )}
+                                      </div>
+                                      <div className="travel-lookbook-body">
+                                        <p className="sku-label">{group.name}</p>
+                                        <h3>{outfit.title}</h3>
+                                        <p className="travel-lookbook-meta">
+                                          {outfit.occasion || outfit.trip || "Lookbook"} • {outfit.item_ids.length} items
+                                        </p>
+                                        <div className="travel-lookbook-actions">
+                                          <Link className="ghost-button studio-mini-button" href={`/outfits/${outfit.id}`}>
+                                            Open
+                                          </Link>
+                                          <button
+                                            type="button"
+                                            className="ghost-button studio-mini-button"
+                                            onClick={() => void handleToggleOutfit(outfit)}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </article>
+                                  );
+                                })}
                               </div>
-                            </article>
-                          );
-                        })}
+                            )}
+                          </section>
+                        ))}
                       </div>
                     )}
                   </article>
