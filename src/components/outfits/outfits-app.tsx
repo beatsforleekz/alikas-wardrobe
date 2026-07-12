@@ -11,15 +11,18 @@ import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createOutfit, deleteOutfit, getOutfits, updateOutfit } from "@/lib/data/outfits";
 import { getInventoryItems } from "@/lib/data/inventory";
+import { getTrips } from "@/lib/data/travel";
 import { hasUnavailableOutfitItems, validateOutfit } from "@/lib/outfits";
 import { useWardrobeSession } from "@/hooks/use-wardrobe-session";
 import type { InventoryItem } from "@/types/inventory";
 import type { Outfit, OutfitInput } from "@/types/outfit";
+import type { Trip } from "@/types/travel";
 
 const OUTFITS_VIEW_STATE_KEY = "alikas-wardrobe:outfits-view-state";
 const OUTFITS_SCROLL_KEY = "alikas-wardrobe:outfits-scroll";
 
 type OutfitSortOption = "az" | "za" | "most_recent" | "oldest";
+type OutfitViewMode = "default" | "list" | "compact";
 
 export function OutfitsApp() {
   const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
@@ -27,10 +30,12 @@ export function OutfitsApp() {
   const savedState = useMemo(() => getStoredOutfitsViewState(), []);
   const [outfits, setOutfits] = useState<Outfit[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [query, setQuery] = useState(savedState?.query ?? "");
   const [sortBy, setSortBy] = useState<OutfitSortOption>(savedState?.sortBy ?? "az");
+  const [viewMode, setViewMode] = useState<OutfitViewMode>(savedState?.viewMode ?? "default");
   const [availabilityFilter, setAvailabilityFilter] = useState<
     "" | "complete" | "incomplete" | "has_unavailable_items"
   >("");
@@ -51,14 +56,16 @@ export function OutfitsApp() {
       setErrorMessage("");
 
       try {
-        const [nextOutfits, nextInventory] = await Promise.all([
+        const [nextOutfits, nextInventory, nextTrips] = await Promise.all([
           getOutfits(supabase),
           getInventoryItems(supabase),
+          getTrips(supabase),
         ]);
 
         if (isActive) {
           setOutfits(nextOutfits);
           setInventoryItems(nextInventory);
+          setTrips(nextTrips);
         }
       } catch (error) {
         if (isActive) {
@@ -85,12 +92,13 @@ export function OutfitsApp() {
 
     window.sessionStorage.setItem(
       OUTFITS_VIEW_STATE_KEY,
-        JSON.stringify({
-          query,
-          sortBy,
-        }),
+      JSON.stringify({
+        query,
+        sortBy,
+        viewMode,
+      }),
     );
-  }, [query, sortBy]);
+  }, [query, sortBy, viewMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -203,6 +211,13 @@ export function OutfitsApp() {
       return leftTitle.localeCompare(rightTitle) || rightCreatedAt.localeCompare(leftCreatedAt);
     });
   }, [availabilityFilter, query, sortBy, validatedOutfits]);
+
+  const tripOptions = useMemo(
+    () =>
+      [...new Set(trips.map((trip) => trip.title.trim()).filter(Boolean))]
+        .sort((left, right) => left.localeCompare(right)),
+    [trips],
+  );
 
   async function handleSaveOutfit(input: OutfitInput, currentId?: string) {
     if (!session) {
@@ -321,6 +336,54 @@ export function OutfitsApp() {
                   <option value="oldest">Oldest</option>
                 </select>
               </label>
+              <div className="field">
+                <span>View</span>
+                <div className="view-toggle-row" role="group" aria-label="Lookbook view">
+                  <button
+                    type="button"
+                    className={`view-toggle-button ${viewMode === "default" ? "is-active" : ""}`}
+                    onClick={() => setViewMode("default")}
+                    aria-label="Default grid view"
+                    title="Default grid"
+                  >
+                    <span className="view-icon view-icon-grid" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-button ${viewMode === "list" ? "is-active" : ""}`}
+                    onClick={() => setViewMode("list")}
+                    aria-label="List view"
+                    title="List"
+                  >
+                    <span className="view-icon view-icon-list" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-button ${viewMode === "compact" ? "is-active" : ""}`}
+                    onClick={() => setViewMode("compact")}
+                    aria-label="Small grid view"
+                    title="Small grid"
+                  >
+                    <span className="view-icon view-icon-compact" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -335,11 +398,12 @@ export function OutfitsApp() {
               description="Try another outfit name, occasion, trip, tag, or linked wardrobe item ID."
             />
           ) : (
-            <div className="outfits-grid">
+            <div className={`outfits-grid outfits-grid-${viewMode}`}>
               {filteredOutfits.map((entry) => (
                 <OutfitCard
                   key={entry.outfit.id}
                   entry={entry}
+                  viewMode={viewMode}
                   onEdit={() => {
                     setEditingOutfit(entry.outfit);
                     setBuilderOpen(true);
@@ -355,6 +419,7 @@ export function OutfitsApp() {
         open={builderOpen}
         outfit={editingOutfit}
         inventoryItems={inventoryItems}
+        tripOptions={tripOptions}
         onClose={() => {
           setBuilderOpen(false);
           setEditingOutfit(null);
@@ -366,7 +431,11 @@ export function OutfitsApp() {
   );
 }
 
-function getStoredOutfitsViewState(): { query: string; sortBy: OutfitSortOption } | null {
+function getStoredOutfitsViewState(): {
+  query: string;
+  sortBy: OutfitSortOption;
+  viewMode: OutfitViewMode;
+} | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -378,7 +447,11 @@ function getStoredOutfitsViewState(): { query: string; sortBy: OutfitSortOption 
       return null;
     }
 
-    const parsed = JSON.parse(rawValue) as Partial<{ query: string; sortBy: OutfitSortOption }>;
+    const parsed = JSON.parse(rawValue) as Partial<{
+      query: string;
+      sortBy: OutfitSortOption;
+      viewMode: OutfitViewMode;
+    }>;
 
     return {
       query: typeof parsed.query === "string" ? parsed.query : "",
@@ -389,6 +462,12 @@ function getStoredOutfitsViewState(): { query: string; sortBy: OutfitSortOption 
         parsed.sortBy === "oldest"
           ? parsed.sortBy
           : "az",
+      viewMode:
+        parsed.viewMode === "default" ||
+        parsed.viewMode === "list" ||
+        parsed.viewMode === "compact"
+          ? parsed.viewMode
+          : "default",
     };
   } catch {
     return null;

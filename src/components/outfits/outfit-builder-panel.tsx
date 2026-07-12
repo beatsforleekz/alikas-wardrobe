@@ -67,6 +67,7 @@ type OutfitBuilderPanelProps = {
   open: boolean;
   outfit: Outfit | null;
   inventoryItems: InventoryItem[];
+  tripOptions: string[];
   onClose: () => void;
   onSubmit: (input: OutfitInput, currentId?: string) => Promise<void>;
   onDelete: (outfit: Outfit) => Promise<void>;
@@ -76,6 +77,7 @@ export function OutfitBuilderPanel({
   open,
   outfit,
   inventoryItems,
+  tripOptions,
   onClose,
   onSubmit,
   onDelete,
@@ -92,25 +94,52 @@ export function OutfitBuilderPanel({
   const [pendingSection, setPendingSection] = useState<StudioSectionLabel | "">("");
   const [showUnavailableItems, setShowUnavailableItems] = useState(false);
   const [replacementTargetItemId, setReplacementTargetItemId] = useState<string | null>(null);
+  const [selectedTripOption, setSelectedTripOption] = useState<string>("");
 
   useEffect(() => {
     if (open) {
-      setDraft(outfit ? normalizeOutfitInput(outfit) : EMPTY_OUTFIT_INPUT);
+      const nextDraft = outfit ? normalizeOutfitInput(outfit) : EMPTY_OUTFIT_INPUT;
+      setDraft(nextDraft);
       setPickerQuery("");
       setPickerCategory("");
       setErrors([]);
       setDraggedBoardItemId(null);
       setDraggedBrowserItemId(null);
       const initialSections = getOrderedSections(
-        getVisibleSections(buildValidatedOutfitFromInput(outfit ? normalizeOutfitInput(outfit) : EMPTY_OUTFIT_INPUT, inventoryItems).linkedItems),
+        getVisibleSections(buildValidatedOutfitFromInput(nextDraft, inventoryItems).linkedItems),
       );
       setSectionOrder(initialSections);
       setManualSections([]);
       setPendingSection(getFirstAvailableSection(initialSections));
       setShowUnavailableItems(false);
       setReplacementTargetItemId(null);
+      setSelectedTripOption(
+        nextDraft.trip && tripOptions.includes(nextDraft.trip) ? nextDraft.trip : nextDraft.trip ? "__custom__" : "",
+      );
     }
-  }, [open, outfit, inventoryItems]);
+  }, [open, outfit, inventoryItems, tripOptions]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (draft.trip && tripOptions.includes(draft.trip)) {
+      if (selectedTripOption !== draft.trip) {
+        setSelectedTripOption(draft.trip);
+      }
+      return;
+    }
+
+    if (!draft.trip && selectedTripOption !== "") {
+      setSelectedTripOption("");
+      return;
+    }
+
+    if (draft.trip && selectedTripOption !== "__custom__") {
+      setSelectedTripOption("__custom__");
+    }
+  }, [draft.trip, open, selectedTripOption, tripOptions]);
 
   const categoryOptions = useMemo(
     () =>
@@ -702,10 +731,33 @@ export function OutfitBuilderPanel({
                     value={draft.occasion}
                     onChange={(value) => setDraft((current) => ({ ...current, occasion: value }))}
                   />
-                  <TextField
-                    label="Trip"
-                    value={draft.trip}
-                    onChange={(value) => setDraft((current) => ({ ...current, trip: value }))}
+                  <TripField
+                    tripOptions={tripOptions}
+                    selectedTripOption={selectedTripOption}
+                    customTripValue={draft.trip}
+                    onSelectTrip={(value) => {
+                      setSelectedTripOption(value);
+
+                      if (value === "__custom__") {
+                        setDraft((current) => ({
+                          ...current,
+                          trip:
+                            current.trip && tripOptions.includes(current.trip)
+                              ? ""
+                              : current.trip,
+                        }));
+                        return;
+                      }
+
+                      setDraft((current) => ({
+                        ...current,
+                        trip: value,
+                      }));
+                    }}
+                    onChangeCustomTrip={(value) => {
+                      setSelectedTripOption("__custom__");
+                      setDraft((current) => ({ ...current, trip: value }));
+                    }}
                   />
                   <TextField
                     label="Tags"
@@ -861,6 +913,51 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
+  );
+}
+
+function TripField({
+  tripOptions,
+  selectedTripOption,
+  customTripValue,
+  onSelectTrip,
+  onChangeCustomTrip,
+}: {
+  tripOptions: string[];
+  selectedTripOption: string;
+  customTripValue: string;
+  onSelectTrip: (value: string) => void;
+  onChangeCustomTrip: (value: string) => void;
+}) {
+  const showingCustomField = selectedTripOption === "__custom__" || (!selectedTripOption && tripOptions.length === 0);
+
+  return (
+    <div className="field">
+      <span>Trip</span>
+      <select
+        className="filter-select"
+        value={selectedTripOption}
+        onChange={(event) => onSelectTrip(event.target.value)}
+      >
+        {tripOptions.length > 0 ? <option value="">No saved trip</option> : null}
+        {tripOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value="__custom__">
+          {tripOptions.length > 0 ? "Add new trip name" : "Enter trip name"}
+        </option>
+      </select>
+      {showingCustomField ? (
+        <input
+          className="text-input"
+          value={customTripValue}
+          placeholder="Type a new trip name"
+          onChange={(event) => onChangeCustomTrip(event.target.value)}
+        />
+      ) : null}
+    </div>
   );
 }
 

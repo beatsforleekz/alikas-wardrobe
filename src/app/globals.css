@@ -828,6 +828,89 @@ button {
   gap: 1.3rem 1.1rem;
 }
 
+.outfits-grid-compact {
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 1rem 0.95rem;
+}
+
+.outfits-grid-list {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.view-toggle-row {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.view-toggle-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 109, 98, 0.12);
+  background: rgba(255, 255, 255, 0.74);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.view-toggle-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(120, 109, 98, 0.18);
+}
+
+.view-toggle-button.is-active {
+  background: rgba(244, 237, 228, 0.86);
+  border-color: rgba(180, 138, 99, 0.26);
+  box-shadow: 0 10px 24px rgba(36, 26, 16, 0.06);
+}
+
+.view-icon {
+  display: grid;
+  gap: 2px;
+}
+
+.view-icon span {
+  display: block;
+  background: rgba(23, 23, 23, 0.8);
+  border-radius: 999px;
+}
+
+.view-icon-grid {
+  grid-template-columns: repeat(2, 7px);
+}
+
+.view-icon-grid span {
+  width: 7px;
+  height: 7px;
+}
+
+.view-icon-list {
+  width: 14px;
+}
+
+.view-icon-list span {
+  width: 14px;
+  height: 3px;
+}
+
+.view-icon-compact {
+  grid-template-columns: repeat(3, 5px);
+}
+
+.view-icon-compact span {
+  width: 5px;
+  height: 5px;
+}
+
 .trips-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
@@ -1970,6 +2053,11 @@ button {
   gap: 1rem;
 }
 
+.outfit-card-list .outfit-card-link {
+  grid-template-columns: minmax(10.5rem, 13rem) minmax(0, 1fr);
+  align-items: start;
+}
+
 .outfit-card-image-link,
 .outfit-card-copy-link {
   display: block;
@@ -1989,6 +2077,15 @@ button {
   box-shadow: 0 18px 38px rgba(46, 33, 21, 0.06);
 }
 
+.outfit-card-list .outfit-card-image-wrap {
+  aspect-ratio: 4 / 4.6;
+}
+
+.outfit-card-compact .outfit-card-image-wrap {
+  border-radius: 22px;
+  aspect-ratio: 4 / 4.7;
+}
+
 .outfit-card-image {
   object-fit: cover;
   transition: transform 320ms ease;
@@ -2002,6 +2099,22 @@ button {
   display: grid;
   gap: 0.6rem;
   padding: 0 0.2rem;
+}
+
+.outfit-card-body-top {
+  padding-bottom: 0;
+}
+
+.outfit-card-list .outfit-card-body {
+  padding-top: 0.25rem;
+}
+
+.outfit-card-compact .outfit-card-body {
+  gap: 0.45rem;
+}
+
+.outfit-card-compact .outfit-card-body h2 {
+  font-size: 1.02rem;
 }
 
 .outfit-card-header,

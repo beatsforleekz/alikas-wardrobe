@@ -10,17 +10,35 @@ import type { ValidatedOutfit } from "@/types/outfit";
 
 type OutfitCardProps = {
   entry: ValidatedOutfit;
+  viewMode?: "default" | "list" | "compact";
   onEdit?: () => void;
 };
 
-export function OutfitCard({ entry, onEdit }: OutfitCardProps) {
+export function OutfitCard({ entry, onEdit, viewMode = "default" }: OutfitCardProps) {
   const imageUrl = getOutfitDisplayImage(entry.outfit);
   const hasUnavailableItems = hasUnavailableOutfitItems(entry);
   const incompleteCount = getOutfitIncompleteCount(entry);
+  const tagLabels = [
+    entry.outfit.occasion,
+    entry.outfit.trip || entry.outfit.capsule,
+    ...entry.outfit.tags,
+  ].filter(Boolean);
 
   return (
-    <article className="outfit-card">
+    <article className={`outfit-card outfit-card-${viewMode}`}>
       <div className="outfit-card-link">
+        <div className="outfit-card-body outfit-card-body-top">
+          <div className="outfit-card-headline-row">
+            <p className="sku-label">Lookbook</p>
+          </div>
+
+          <Link className="outfit-card-copy-link" href={`/outfits/${entry.outfit.id}`}>
+            <div className="outfit-card-header">
+              <h2>{entry.outfit.title}</h2>
+            </div>
+          </Link>
+        </div>
+
         <Link className="outfit-card-image-link" href={`/outfits/${entry.outfit.id}`}>
           <div className="outfit-card-image-wrap">
             {imageUrl ? (
@@ -38,35 +56,14 @@ export function OutfitCard({ entry, onEdit }: OutfitCardProps) {
         </Link>
 
         <div className="outfit-card-body">
-          <div className="outfit-card-headline-row">
-            <p className="sku-label">Lookbook</p>
-            {onEdit ? (
-              <button type="button" className="ghost-button outfit-inline-action" onClick={onEdit}>
-                Edit Lookbook
-              </button>
-            ) : null}
-          </div>
-
           <Link className="outfit-card-copy-link" href={`/outfits/${entry.outfit.id}`}>
-            <div className="outfit-card-header">
-              <h2>{entry.outfit.title}</h2>
-              <span className="outfit-count-pill">{entry.linkedItemCount} linked</span>
-            </div>
-
-            <div className="outfit-card-meta">
-              {entry.outfit.occasion ? <span>{entry.outfit.occasion}</span> : null}
-              {entry.outfit.trip ? (
-                <>
-                  {entry.outfit.occasion ? <span className="meta-dot" aria-hidden="true" /> : null}
-                  <span>{entry.outfit.trip}</span>
-                </>
-              ) : entry.outfit.capsule ? (
-                <>
-                  {entry.outfit.occasion ? <span className="meta-dot" aria-hidden="true" /> : null}
-                  <span>{entry.outfit.capsule}</span>
-                </>
-              ) : null}
-            </div>
+            {tagLabels.length > 0 ? (
+              <div className="outfit-card-meta">
+                {tagLabels.map((label, index) => (
+                  <span key={`${label}-${index}`}>{label}</span>
+                ))}
+              </div>
+            ) : null}
 
             {hasUnavailableItems || entry.needsReviewCount ? (
               <div className="outfit-warning-row">
@@ -101,6 +98,11 @@ export function OutfitCard({ entry, onEdit }: OutfitCardProps) {
             <Link className="back-link" href={`/outfits/${entry.outfit.id}`}>
               Open lookbook
             </Link>
+            {onEdit ? (
+              <button type="button" className="ghost-button outfit-inline-action" onClick={onEdit}>
+                Edit Lookbook
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
