@@ -12,6 +12,7 @@ type SearchToolbarProps = {
     seasons: string[];
     styleTypes: string[];
     travelFriendly: string[];
+    imageStates: string[];
   };
   totalCount: number;
   resultCount: number;
@@ -36,6 +37,7 @@ export function SearchToolbar({
         filters.season,
         filters.style_type,
         filters.travel_friendly,
+        filters.image_state,
       ].filter(Boolean).length,
     [filters],
   );
@@ -102,6 +104,12 @@ export function SearchToolbar({
           value={filters.travel_friendly}
           options={filterOptions.travelFriendly}
           onChange={(value) => onChange({ ...filters, travel_friendly: value })}
+        />
+        <FilterSelect
+          label="Image"
+          value={filters.image_state}
+          options={filterOptions.imageStates}
+          onChange={(value) => onChange({ ...filters, image_state: value })}
         />
       </div>
 

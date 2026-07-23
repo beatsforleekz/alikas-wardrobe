@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { StatusBadge } from "@/components/inventory/status-badge";
+import { RemoteImage } from "@/components/ui/remote-image";
 import { getDisplayImage, isUnavailableInventoryStatus } from "@/lib/inventory";
 import type { InventoryItem } from "@/types/inventory";
 
@@ -41,12 +41,10 @@ export function InventoryCard({
       <Link className="inventory-card-link" href={`/items/${encodeURIComponent(item.item_id)}`}>
         <div className="card-image-wrap">
           {imageUrl ? (
-            <Image
+            <RemoteImage
               src={imageUrl}
               alt={item.item_name || item.item_id}
-              fill
               className="card-image"
-              sizes="(max-width: 700px) 100vw, (max-width: 1200px) 50vw, 25vw"
             />
           ) : (
             <div className="card-image-fallback">No image available</div>

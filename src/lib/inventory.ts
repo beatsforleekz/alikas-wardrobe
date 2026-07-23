@@ -194,6 +194,7 @@ export function buildFilterOptions(items: InventoryItem[]) {
     seasons: uniqueValues(items.map((item) => item.season)),
     styleTypes: uniqueValues(items.map((item) => item.style_type)),
     travelFriendly: uniqueValues(items.map((item) => normalizeTravelFriendly(item.travel_friendly))),
+    imageStates: ["Has image link", "No image link"],
   };
 }
 
@@ -231,13 +232,20 @@ export function filterInventoryItems(items: InventoryItem[], filters: InventoryF
       !filters.travel_friendly ||
       normalizeTravelFriendly(item.travel_friendly) === filters.travel_friendly;
 
+    const hasImageLink = Boolean(item.image?.trim());
+    const matchesImageState =
+      !filters.image_state ||
+      (filters.image_state === "Has image link" && hasImageLink) ||
+      (filters.image_state === "No image link" && !hasImageLink);
+
     return (
       matchesQuery &&
       matchesCategory &&
       matchesStatus &&
       matchesSeason &&
       matchesStyleType &&
-      matchesTravelFriendly
+      matchesTravelFriendly &&
+      matchesImageState
     );
   });
 }

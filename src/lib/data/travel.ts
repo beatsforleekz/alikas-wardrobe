@@ -5,6 +5,7 @@ import {
   normalizeTripEssentialItemRecord,
   normalizeTripLookCategoryRecord,
   normalizeTripOutfitLinkRecord,
+  normalizeTripItemReturnRecord,
   normalizeTripRecord,
   normalizeTripWardrobeItemOutfitLinkRecord,
   normalizeTripWardrobeItemRecord,
@@ -17,11 +18,32 @@ import type {
   Trip,
   TripEssentialItem,
   TripInput,
+  TripItemReturn,
   TripLookCategory,
   TripOutfitLink,
   TripWardrobeItem,
   TripWardrobeItemOutfitLink,
 } from "@/types/travel";
+
+function isMissingTripItemReturnsTableError(message: string) {
+  return message.includes("Could not find the table 'public.trip_item_returns'") ||
+    message.includes('relation "public.trip_item_returns" does not exist') ||
+    message.includes('relation "trip_item_returns" does not exist');
+}
+
+function getMissingSchemaColumn(message: string) {
+  const schemaCacheMatch = message.match(/Could not find the '([^']+)' column/);
+  if (schemaCacheMatch?.[1]) {
+    return schemaCacheMatch[1];
+  }
+
+  const postgresMatch = message.match(/column "?([^"\s]+)"? of relation/i);
+  if (postgresMatch?.[1]) {
+    return postgresMatch[1];
+  }
+
+  return null;
+}
 
 export async function getTrips(supabase: SupabaseClient): Promise<Trip[]> {
   const { data, error } = await supabase
@@ -269,22 +291,48 @@ export async function upsertTripWardrobeItems(
     trip_id: string;
     user_id: string;
     wardrobe_item_id: string;
-    source: "outfit" | "manual";
-    packing_status?: "pending" | "packed" | "not_required" | "missing";
+    source: TripWardrobeItem["source"];
+    packing_status?: TripWardrobeItem["packing_status"];
+    capsule_status?: TripWardrobeItem["capsule_status"];
+    required?: boolean;
+    bag_assignment?: TripWardrobeItem["bag_assignment"];
+    removed_from_capsule?: boolean;
+    removed_from_capsule_at?: string | null;
+    packed_at?: string | null;
     notes?: string | null;
     sort_order?: number;
   }>,
 ) {
-  const { data, error } = await supabase
-    .from("trip_wardrobe_items")
-    .upsert(rows, { onConflict: "trip_id,wardrobe_item_id" })
-    .select("*");
+  let payload = rows.map((row) => ({ ...row }));
+  const unsupportedColumns = new Set<string>();
 
-  if (error) {
-    throw new Error(`Failed to save trip wardrobe items: ${error.message}`);
+  while (true) {
+    const { data, error } = await supabase
+      .from("trip_wardrobe_items")
+      .upsert(payload, { onConflict: "trip_id,wardrobe_item_id" })
+      .select("*");
+
+    if (!error) {
+      return ((data as TripWardrobeItem[] | null) ?? []).map(normalizeTripWardrobeItemRecord);
+    }
+
+    const missingColumn = getMissingSchemaColumn(error.message);
+
+    if (!missingColumn) {
+      throw new Error(`Failed to save trip wardrobe items: ${error.message}`);
+    }
+
+    if (unsupportedColumns.has(missingColumn)) {
+      throw new Error(`Failed to save trip wardrobe items: ${error.message}`);
+    }
+
+    unsupportedColumns.add(missingColumn);
+    payload = payload.map((row) => {
+      const nextRow = { ...row } as Record<string, unknown>;
+      delete nextRow[missingColumn];
+      return nextRow as typeof row;
+    });
   }
-
-  return ((data as TripWardrobeItem[] | null) ?? []).map(normalizeTripWardrobeItemRecord);
 }
 
 export async function deleteTripWardrobeItems(
@@ -502,8 +550,9 @@ export async function createTripEssentialItems(
     source_library_item_id?: string | null;
     title: string;
     category: string;
-    inclusion_type: "always_include" | "usually_include" | "optional" | "trip_specific";
-    packing_status?: "pending" | "packed" | "not_required" | "missing";
+    inclusion_type: TripEssentialItem["inclusion_type"];
+    packing_status?: TripEssentialItem["packing_status"];
+    required?: boolean;
     notes?: string | null;
     sort_order?: number;
   }>,
@@ -525,7 +574,10 @@ export async function updateTripEssentialItem(
   supabase: SupabaseClient,
   itemId: string,
   updates: Partial<
-    Pick<TripEssentialItem, "packing_status" | "notes" | "title" | "category" | "inclusion_type">
+    Pick<
+      TripEssentialItem,
+      "packing_status" | "notes" | "title" | "category" | "inclusion_type" | "required"
+    >
   >,
 ) {
   const { data, error } = await supabase
@@ -566,4 +618,54 @@ export async function reorderTripEssentialItems(
   }
 
   return ((data as TripEssentialItem[] | null) ?? []).map(normalizeTripEssentialItemRecord);
+}
+
+export async function getTripItemReturns(
+  supabase: SupabaseClient,
+  tripId: string,
+): Promise<TripItemReturn[]> {
+  const { data, error } = await supabase
+    .from("trip_item_returns")
+    .select("*")
+    .eq("trip_id", tripId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    if (isMissingTripItemReturnsTableError(error.message)) {
+      return [];
+    }
+
+    throw new Error(`Failed to load trip return items: ${error.message}`);
+  }
+
+  return ((data as TripItemReturn[] | null) ?? []).map(normalizeTripItemReturnRecord);
+}
+
+export async function upsertTripItemReturn(
+  supabase: SupabaseClient,
+  row: {
+    trip_id: string;
+    wardrobe_item_id: string;
+    user_id: string;
+    return_status: TripItemReturn["return_status"];
+    notes?: string | null;
+  },
+) {
+  const { data, error } = await supabase
+    .from("trip_item_returns")
+    .upsert(row, { onConflict: "trip_id,wardrobe_item_id" })
+    .select("*")
+    .single();
+
+  if (error) {
+    if (isMissingTripItemReturnsTableError(error.message)) {
+      throw new Error(
+        "Trip return tracking is not enabled in Supabase yet. Please run the latest Travel Suite SQL that creates public.trip_item_returns.",
+      );
+    }
+
+    throw new Error(`Failed to save trip return item: ${error.message}`);
+  }
+
+  return normalizeTripItemReturnRecord(data as TripItemReturn);
 }

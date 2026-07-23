@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { SlideOver } from "@/components/ui/slide-over";
-import { TRIP_STATUS_OPTIONS, defaultTripInput } from "@/lib/travel";
+import {
+  TRIP_LUGGAGE_TYPE_OPTIONS,
+  TRIP_STATUS_OPTIONS,
+  defaultTripInput,
+} from "@/lib/travel";
 import type { Trip, TripInput } from "@/types/travel";
 
 type TripFormPanelProps = {
@@ -36,6 +40,11 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
         end_date: trip.end_date ?? "",
         baggage_limit: trip.baggage_limit ?? "",
         baggage_notes: trip.baggage_notes ?? "",
+        luggage_type: trip.luggage_type ?? "",
+        number_of_bags: trip.number_of_bags ?? 1,
+        weight_allowance: trip.weight_allowance ?? "",
+        luggage_dimensions: trip.luggage_dimensions ?? "",
+        luggage_assignment_notes: trip.luggage_assignment_notes ?? "",
         status: trip.status,
       });
       setErrorMessage("");
@@ -125,12 +134,28 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
           </label>
 
           <label className="field">
-            <span>Baggage limit</span>
+            <span>Luggage type</span>
+            <select
+              className="filter-select"
+              value={draft.luggage_type}
+              onChange={(event) => setDraft((current) => ({ ...current, luggage_type: event.target.value }))}
+            >
+              <option value="">Select luggage type</option>
+              {TRIP_LUGGAGE_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Weight allowance</span>
             <input
               className="text-input"
-              value={draft.baggage_limit}
+              value={draft.weight_allowance}
               onChange={(event) =>
-                setDraft((current) => ({ ...current, baggage_limit: event.target.value }))
+                setDraft((current) => ({ ...current, weight_allowance: event.target.value }))
               }
               placeholder="23kg checked bag"
             />
@@ -159,6 +184,48 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
           </label>
         </div>
 
+        <div className="editorial-form-grid editorial-form-grid-double">
+          <label className="field">
+            <span>Number of bags</span>
+            <input
+              className="text-input"
+              type="number"
+              min={1}
+              value={draft.number_of_bags}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  number_of_bags: Math.max(1, Number(event.target.value || 1)),
+                }))
+              }
+            />
+          </label>
+
+          <label className="field">
+            <span>Dimensions</span>
+            <input
+              className="text-input"
+              value={draft.luggage_dimensions}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, luggage_dimensions: event.target.value }))
+              }
+              placeholder="55 x 35 x 23cm"
+            />
+          </label>
+
+          <label className="field">
+            <span>Baggage limit</span>
+            <input
+              className="text-input"
+              value={draft.baggage_limit}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, baggage_limit: event.target.value }))
+              }
+              placeholder="1 checked + 1 cabin"
+            />
+          </label>
+        </div>
+
         <label className="field">
           <span>Baggage notes</span>
           <textarea
@@ -168,6 +235,18 @@ export function TripFormPanel({ open, trip, onClose, onSubmit }: TripFormPanelPr
               setDraft((current) => ({ ...current, baggage_notes: event.target.value }))
             }
             placeholder="Cabin bag strategy, laundry expectations, weight notes..."
+          />
+        </label>
+
+        <label className="field">
+          <span>Luggage assignment notes</span>
+          <textarea
+            className="text-area-input"
+            value={draft.luggage_assignment_notes}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, luggage_assignment_notes: event.target.value }))
+            }
+            placeholder="Checked suitcase / cabin bag plan, wearing for travel, bag split..."
           />
         </label>
 

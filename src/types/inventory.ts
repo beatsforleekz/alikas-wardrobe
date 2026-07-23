@@ -51,6 +51,7 @@ export type InventoryFilters = {
   season: string;
   style_type: string;
   travel_friendly: string;
+  image_state: string;
 };
 
 export type InventoryPageSize = 24 | 48 | 96 | "all";

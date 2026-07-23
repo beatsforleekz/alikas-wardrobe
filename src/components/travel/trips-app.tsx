@@ -96,6 +96,35 @@ export function TripsApp() {
     setNotice(`${created.title} added to Travel.`);
   }
 
+  async function handleCloseTrip(trip: Trip) {
+    const confirmed = window.confirm(
+      `Close "${trip.title}"? This will mark the trip as completed even if packing was not fully finished.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const updated = await updateTrip(supabase, trip.id, {
+      title: trip.title,
+      destination: trip.destination ?? "",
+      notes: trip.notes ?? "",
+      start_date: trip.start_date ?? "",
+      end_date: trip.end_date ?? "",
+      baggage_limit: trip.baggage_limit ?? "",
+      baggage_notes: trip.baggage_notes ?? "",
+      luggage_type: trip.luggage_type ?? "",
+      number_of_bags: trip.number_of_bags,
+      weight_allowance: trip.weight_allowance ?? "",
+      luggage_dimensions: trip.luggage_dimensions ?? "",
+      luggage_assignment_notes: trip.luggage_assignment_notes ?? "",
+      status: "completed",
+    });
+
+    setTrips((current) => current.map((entry) => (entry.id === trip.id ? updated : entry)));
+    setNotice(`${updated.title} closed.`);
+  }
+
   if (isSessionLoading) {
     return <BrandedLoadingScreen title="Preparing your travel suite" theme="travel" />;
   }
@@ -177,6 +206,7 @@ export function TripsApp() {
                     setEditingTrip(trip);
                     setEditorOpen(true);
                   }}
+                  onClose={() => void handleCloseTrip(trip)}
                 />
               ))}
             </div>

@@ -20,6 +20,62 @@ export async function getInventoryItems(supabase: SupabaseClient): Promise<Inven
   return sortInventoryItems((data as InventoryItem[] | null) ?? []);
 }
 
+export async function getInventoryItemsByItemIds(
+  supabase: SupabaseClient,
+  itemIds: string[],
+): Promise<InventoryItem[]> {
+  const normalizedIds = [...new Set(itemIds.map((itemId) => itemId.trim()).filter(Boolean))];
+
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("inventory")
+    .select("*")
+    .in("item_id", normalizedIds)
+    .order("item_id", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load selected inventory items: ${error.message}`);
+  }
+
+  return sortInventoryItems((data as InventoryItem[] | null) ?? []);
+}
+
+export async function searchInventoryItems(
+  supabase: SupabaseClient,
+  query: string,
+  limit = 160,
+): Promise<InventoryItem[]> {
+  const trimmedQuery = query.trim();
+
+  if (!trimmedQuery) {
+    return [];
+  }
+
+  const likeQuery = `%${trimmedQuery}%`;
+  const { data, error } = await supabase
+    .from("inventory")
+    .select("*")
+    .or(
+      [
+        `item_id.ilike.${likeQuery}`,
+        `item_name.ilike.${likeQuery}`,
+        `category.ilike.${likeQuery}`,
+        `colour.ilike.${likeQuery}`,
+      ].join(","),
+    )
+    .order("item_id", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to search inventory: ${error.message}`);
+  }
+
+  return sortInventoryItems((data as InventoryItem[] | null) ?? []);
+}
+
 export async function getInventoryItemByItemId(
   supabase: SupabaseClient,
   itemId: string,

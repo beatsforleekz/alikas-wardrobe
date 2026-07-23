@@ -32,6 +32,7 @@ const defaultFilters: InventoryFilters = {
   season: "",
   style_type: "",
   travel_friendly: "",
+  image_state: "",
 };
 
 const INVENTORY_VIEW_STATE_KEY = "alikas-wardrobe:inventory-view-state";

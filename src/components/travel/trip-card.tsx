@@ -9,10 +9,14 @@ type TripCardProps = {
   trip: Trip;
   outfitCount: number;
   onEdit: () => void;
+  onClose: () => void;
 };
 
-export function TripCard({ trip, outfitCount, onEdit }: TripCardProps) {
+export function TripCard({ trip, outfitCount, onEdit, onClose }: TripCardProps) {
   const duration = getTripDurationLabel(trip.start_date, trip.end_date);
+  const today = new Date().toISOString().slice(0, 10);
+  const isTripOver = Boolean(trip.end_date && trip.end_date < today);
+  const canCloseTrip = trip.status !== "completed" && trip.status !== "archived" && isTripOver;
 
   return (
     <article className="trip-card">
@@ -45,6 +49,15 @@ export function TripCard({ trip, outfitCount, onEdit }: TripCardProps) {
           <button type="button" className="ghost-button outfit-inline-action" onClick={onEdit}>
             Edit trip
           </button>
+          {canCloseTrip ? (
+            <button
+              type="button"
+              className="ghost-button outfit-inline-action danger-button"
+              onClick={onClose}
+            >
+              Close trip
+            </button>
+          ) : null}
         </div>
       </div>
     </article>

@@ -14,7 +14,12 @@ import { TravelShellNav } from "@/components/travel/travel-shell-nav";
 import { BrandedLoadingScreen } from "@/components/ui/branded-loading-screen";
 import { DetailGrid } from "@/components/ui/detail-grid";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getInventoryItems } from "@/lib/data/inventory";
+import { RemoteImage } from "@/components/ui/remote-image";
+import {
+  getInventoryItemsByItemIds,
+  searchInventoryItems,
+  updateInventoryItemStatus,
+} from "@/lib/data/inventory";
 import { getOutfits } from "@/lib/data/outfits";
 import {
   addTripOutfitLink,
@@ -28,6 +33,7 @@ import {
   deleteTripWardrobeItems,
   getEssentialLibraryItems,
   getTripById,
+  getTripItemReturns,
   getTripLookCategories,
   getTripEssentialItems,
   getTripOutfitLinks,
@@ -35,8 +41,10 @@ import {
   getTripWardrobeItems,
   reorderTripEssentialItems,
   reorderTripOutfitLinks,
+  updateTrip,
   updateTripLookCategory,
   updateTripEssentialItem,
+  upsertTripItemReturn,
   upsertTripWardrobeItemOutfitLinks,
   upsertTripWardrobeItems,
 } from "@/lib/data/travel";
@@ -49,8 +57,9 @@ import {
 import {
   ESSENTIAL_CATEGORY_OPTIONS,
   formatPackingStatusLabel,
-  formatEssentialInclusionType,
+  formatTripCapsuleStatus,
   formatTripDateRange,
+  formatTripReturnStatus,
   formatTripStatus,
   isEssentialRequired,
   isPackingStatusResolved,
@@ -64,20 +73,28 @@ import type {
   EssentialLibraryItem,
   Trip,
   TripEssentialItem,
+  TripItemReturn,
   TripLookCategory,
   TripOutfitLink,
   TripWardrobeItem,
   TripWardrobeItemOutfitLink,
 } from "@/types/travel";
 
-type TripStudioTab = "overview" | "looks" | "packing" | "essentials" | "summary";
+type TripStudioTab =
+  | "overview"
+  | "capsule"
+  | "packing"
+  | "essentials"
+  | "packed_summary"
+  | "travel_wardrobe";
 
 const TRIP_STUDIO_TABS: Array<{ id: TripStudioTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "looks", label: "Looks" },
-  { id: "packing", label: "Wardrobe Packing" },
+  { id: "capsule", label: "Capsule" },
+  { id: "packing", label: "Packing" },
   { id: "essentials", label: "Essentials" },
-  { id: "summary", label: "Packed Summary" },
+  { id: "packed_summary", label: "Packed Summary" },
+  { id: "travel_wardrobe", label: "Travel Wardrobe" },
 ];
 
 type EssentialDraft = {
@@ -89,6 +106,8 @@ const emptyEssentialDraft: EssentialDraft = {
   title: "",
   notes: "",
 };
+
+type TripEssentialsView = "checklist" | "to_get";
 
 type SelectedOutfitEntry = {
   link: TripOutfitLink;
@@ -148,31 +167,48 @@ function sortTripLinksWithinGroups(
   });
 }
 
+function mergeInventoryCaches(
+  currentItems: InventoryItem[],
+  nextItems: InventoryItem[],
+) {
+  const merged = new Map(currentItems.map((item) => [item.item_id, item]));
+  nextItems.forEach((item) => merged.set(item.item_id, item));
+  return [...merged.values()].sort((left, right) => left.item_id.localeCompare(right.item_id));
+}
+
 export function TripDetailShell({ tripId }: { tripId: string }) {
   const { supabase, session, isSessionLoading, handleLogin } = useWardrobeSession();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [outfits, setOutfits] = useState<Outfit[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [manualSearchItems, setManualSearchItems] = useState<InventoryItem[]>([]);
   const [tripLinks, setTripLinks] = useState<TripOutfitLink[]>([]);
   const [lookCategories, setLookCategories] = useState<TripLookCategory[]>([]);
   const [wardrobeItems, setWardrobeItems] = useState<TripWardrobeItem[]>([]);
   const [wardrobeItemLinks, setWardrobeItemLinks] = useState<TripWardrobeItemOutfitLink[]>([]);
+  const [tripItemReturns, setTripItemReturns] = useState<TripItemReturn[]>([]);
   const [essentialLibraryItems, setEssentialLibraryItems] = useState<EssentialLibraryItem[]>([]);
   const [tripEssentialItems, setTripEssentialItems] = useState<TripEssentialItem[]>([]);
   const [activeTab, setActiveTab] = useState<TripStudioTab>("overview");
   const [lookQuery, setLookQuery] = useState("");
   const [newLookCategoryName, setNewLookCategoryName] = useState("");
   const [packingQuery, setPackingQuery] = useState("");
+  const [manualAddQuery, setManualAddQuery] = useState("");
+  const [isManualSearchLoading, setIsManualSearchLoading] = useState(false);
   const [packingCategory, setPackingCategory] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [addingCategory, setAddingCategory] = useState<string | null>(null);
   const [newEssentialDraft, setNewEssentialDraft] = useState<EssentialDraft>(emptyEssentialDraft);
   const [editingEssentialId, setEditingEssentialId] = useState<string | null>(null);
   const [editingEssentialDraft, setEditingEssentialDraft] = useState<EssentialDraft>(emptyEssentialDraft);
+  const [essentialsView, setEssentialsView] = useState<TripEssentialsView>("checklist");
+  const [openEssentialMenuId, setOpenEssentialMenuId] = useState<string | null>(null);
   const [draggedTripLinkId, setDraggedTripLinkId] = useState("");
   const [draggedEssentialId, setDraggedEssentialId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isCompletingTrip, setIsCompletingTrip] = useState(false);
+  const [showReturnFlow, setShowReturnFlow] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -191,21 +227,21 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         const [
           nextTrip,
           nextOutfits,
-          nextInventory,
           nextTripLinks,
           nextLookCategories,
           nextWardrobeItems,
           nextWardrobeItemLinks,
+          nextTripItemReturns,
           nextLibraryItems,
           currentTripEssentials,
         ] = await Promise.all([
           getTripById(supabase, tripId),
           getOutfits(supabase),
-          getInventoryItems(supabase),
           getTripOutfitLinks(supabase, tripId),
           getTripLookCategories(supabase, tripId),
           getTripWardrobeItems(supabase, tripId),
           getTripWardrobeItemOutfitLinks(supabase, tripId),
+          getTripItemReturns(supabase, tripId),
           getEssentialLibraryItems(supabase),
           getTripEssentialItems(supabase, tripId),
         ]);
@@ -216,6 +252,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
           }
           return;
         }
+
+        const nextInventory = await getInventoryItemsByItemIds(
+          supabase,
+          nextWardrobeItems.map((item) => item.wardrobe_item_id),
+        );
 
         let activeLibraryItems = nextLibraryItems.filter((item) => !item.is_archived);
 
@@ -239,7 +280,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
               title: item.title,
               category: item.category,
               inclusion_type: item.inclusion_type,
-              packing_status: "pending",
+              packing_status: "not_packed",
               notes: item.notes,
               sort_order: index,
             })),
@@ -253,10 +294,12 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         setTrip(nextTrip);
         setOutfits(nextOutfits);
         setInventoryItems(nextInventory);
+        setManualSearchItems([]);
         setTripLinks(sortTripLinksWithinGroups(nextTripLinks, nextLookCategories));
         setLookCategories(nextLookCategories);
         setWardrobeItems(nextWardrobeItems);
         setWardrobeItemLinks(nextWardrobeItemLinks);
+        setTripItemReturns(nextTripItemReturns);
         setEssentialLibraryItems(activeLibraryItems);
         setTripEssentialItems(resolvedTripEssentials);
         setCollapsedCategories((current) =>
@@ -286,6 +329,55 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       isActive = false;
     };
   }, [session, supabase, tripId]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadManualSearchItems() {
+      if (!session) {
+        return;
+      }
+
+      const trimmedQuery = manualAddQuery.trim();
+
+      if (!trimmedQuery) {
+        if (isActive) {
+          setManualSearchItems([]);
+          setIsManualSearchLoading(false);
+        }
+        return;
+      }
+
+      setIsManualSearchLoading(true);
+
+      try {
+        const nextItems = await searchInventoryItems(supabase, trimmedQuery);
+
+        if (!isActive) {
+          return;
+        }
+
+        setManualSearchItems(nextItems);
+      } catch (error) {
+        if (isActive) {
+          setErrorMessage(error instanceof Error ? error.message : "Unable to search wardrobe items.");
+        }
+      } finally {
+        if (isActive) {
+          setIsManualSearchLoading(false);
+        }
+      }
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadManualSearchItems();
+    }, 220);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [manualAddQuery, session, supabase]);
 
   const selectedOutfitIds = useMemo(
     () => new Set(tripLinks.map((link) => link.outfit_id)),
@@ -416,25 +508,32 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
   );
   const manualInventoryOptions = useMemo(() => {
     const packedIds = new Set(wardrobeItems.map((item) => item.wardrobe_item_id));
+    const normalizedQuery = normalizeText(manualAddQuery);
 
-    return inventoryItems.filter((item) => {
-      if (packedIds.has(item.item_id)) {
-        return false;
-      }
+    if (!normalizedQuery) {
+      return [];
+    }
 
-      if (!isInventoryItemAvailableForNewUse(item)) {
-        return false;
-      }
+    return manualSearchItems
+      .filter((item) => {
+        if (packedIds.has(item.item_id)) {
+          return false;
+        }
 
-      if (!packingQuery.trim()) {
-        return true;
-      }
+        if (!isInventoryItemAvailableForNewUse(item)) {
+          return false;
+        }
 
-      return [item.item_id, item.item_name, item.category, item.colour]
-        .filter(Boolean)
-        .some((field) => normalizeText(field).includes(normalizeText(packingQuery)));
-    });
-  }, [inventoryItems, packingQuery, wardrobeItems]);
+        return [item.item_id, item.item_name, item.category, item.colour]
+          .filter(Boolean)
+          .some((field) => normalizeText(field).includes(normalizedQuery));
+      })
+      .sort(
+        (left, right) =>
+          (left.item_name || left.item_id).localeCompare(right.item_name || right.item_id) ||
+          left.item_id.localeCompare(right.item_id),
+      );
+  }, [manualAddQuery, manualSearchItems, wardrobeItems]);
   const essentialsByCategory = useMemo(() => {
     return tripEssentialItems.reduce<Record<string, TripEssentialItem[]>>((accumulator, item) => {
       const key = item.category || "Custom";
@@ -442,6 +541,25 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       return accumulator;
     }, {});
   }, [tripEssentialItems]);
+  const checklistEssentialItems = useMemo(
+    () =>
+      tripEssentialItems.filter(
+        (item) => item.packing_status !== "to_buy" && item.packing_status !== "not_required",
+      ),
+    [tripEssentialItems],
+  );
+  const toGetEssentialItems = useMemo(
+    () => tripEssentialItems.filter((item) => item.packing_status === "to_buy"),
+    [tripEssentialItems],
+  );
+  const activeEssentialItems = essentialsView === "to_get" ? toGetEssentialItems : checklistEssentialItems;
+  const activeEssentialsByCategory = useMemo(() => {
+    return activeEssentialItems.reduce<Record<string, TripEssentialItem[]>>((accumulator, item) => {
+      const key = item.category || "Custom";
+      accumulator[key] = accumulator[key] ? [...accumulator[key], item] : [item];
+      return accumulator;
+    }, {});
+  }, [activeEssentialItems]);
   const essentialsCategoryProgress = useMemo(
     () =>
       Object.entries(essentialsByCategory)
@@ -469,6 +587,27 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
             left.category.localeCompare(right.category),
         ),
     [essentialsByCategory],
+  );
+  const visibleEssentialsCategoryProgress = useMemo(
+    () =>
+      Object.entries(activeEssentialsByCategory)
+        .map(([category, items]) => {
+          const packedItems = items.filter((item) => item.packing_status === "packed");
+
+          return {
+            category,
+            items,
+            packedCount: packedItems.length,
+            totalCount: items.length,
+          };
+        })
+        .sort(
+          (left, right) =>
+            ESSENTIAL_CATEGORY_OPTIONS.indexOf(left.category as (typeof ESSENTIAL_CATEGORY_OPTIONS)[number]) -
+              ESSENTIAL_CATEGORY_OPTIONS.indexOf(right.category as (typeof ESSENTIAL_CATEGORY_OPTIONS)[number]) ||
+            left.category.localeCompare(right.category),
+        ),
+    [activeEssentialsByCategory],
   );
   const wardrobeCategoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -501,8 +640,8 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       availableWardrobeRows.filter((item) => item.packing_status === "not_required").length +
       tripEssentialItems.filter((item) => item.packing_status === "not_required").length;
     const missingCount =
-      availableWardrobeRows.filter((item) => item.packing_status === "missing").length +
-      tripEssentialItems.filter((item) => item.packing_status === "missing").length;
+      availableWardrobeRows.filter((item) => item.packing_status === "unavailable").length +
+      tripEssentialItems.filter((item) => item.packing_status === "unavailable").length;
     const suitcaseReady = totalRequired > 0 && totalResolved === totalRequired && missingCount === 0;
 
     return {
@@ -529,6 +668,97 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       suitcaseReady,
     };
   }, [selectedOutfitEntries.length, tripEssentialItems, wardrobeEntries]);
+  const incompleteLookCount = useMemo(
+    () =>
+      selectedOutfitEntries.filter(({ outfit }) =>
+        outfit.item_ids.some((itemId) => {
+          const matchingItem = wardrobeEntries.find((entry) => entry.row.wardrobe_item_id === itemId);
+          return !matchingItem || ["unavailable", "waiting_for_laundry", "to_buy", "not_packed"].includes(matchingItem.row.packing_status);
+        }),
+      ).length,
+    [selectedOutfitEntries, wardrobeEntries],
+  );
+  const capsuleItemCount = useMemo(
+    () => wardrobeItems.filter((item) => item.capsule_status !== "excluded").length,
+    [wardrobeItems],
+  );
+  const optionalCapsuleItemsCount = useMemo(
+    () => wardrobeItems.filter((item) => item.capsule_status === "optional").length,
+    [wardrobeItems],
+  );
+  const toBuyCapsuleItemsCount = useMemo(
+    () => wardrobeItems.filter((item) => item.capsule_status === "to_buy" || item.source === "to_buy").length,
+    [wardrobeItems],
+  );
+  const unresolvedWardrobeCount = useMemo(
+    () =>
+      wardrobeItems.filter((item) =>
+        ["not_packed", "waiting_for_laundry", "to_buy", "unavailable"].includes(item.packing_status),
+      ).length,
+    [wardrobeItems],
+  );
+  const approvedCapsuleReady = useMemo(
+    () => capsuleItemCount > 0 && selectedOutfitEntries.length > 0,
+    [capsuleItemCount, selectedOutfitEntries.length],
+  );
+  const travelWardrobeEntries = useMemo(
+    () =>
+      wardrobeEntries.filter(({ row }) =>
+        row.packing_status === "packed" || row.bag_assignment === "Wearing for travel",
+      ),
+    [wardrobeEntries],
+  );
+  const readyTravelLooks = useMemo(
+    () =>
+      selectedOutfitEntries.filter(({ outfit }) =>
+        outfit.item_ids.every((itemId) => {
+          const matchingItem = wardrobeEntries.find((entry) => entry.row.wardrobe_item_id === itemId);
+          if (!matchingItem) {
+            return false;
+          }
+
+          return (
+            matchingItem.row.packing_status === "packed" ||
+            matchingItem.row.bag_assignment === "Wearing for travel"
+          );
+        }),
+      ),
+    [selectedOutfitEntries, wardrobeEntries],
+  );
+  const partialTravelLooks = useMemo(
+    () =>
+      selectedOutfitEntries.filter(({ outfit }) =>
+        outfit.item_ids.some((itemId) => {
+          const matchingItem = wardrobeEntries.find((entry) => entry.row.wardrobe_item_id === itemId);
+          return !matchingItem || !(matchingItem.row.packing_status === "packed" || matchingItem.row.bag_assignment === "Wearing for travel");
+        }),
+      ),
+    [selectedOutfitEntries, wardrobeEntries],
+  );
+  const primaryTripAction = (() => {
+    if (!trip) {
+      return null;
+    }
+
+    switch (trip.status) {
+      case "draft":
+        return { label: "Review Capsule", action: () => setActiveTab("capsule") };
+      case "ready_for_review":
+        return { label: "Approve for Packing", action: () => void handleAdvanceTripStatus("approved_for_packing") };
+      case "approved_for_packing":
+      case "packing":
+        return { label: "Continue Packing", action: () => setActiveTab("packing") };
+      case "packed":
+        return { label: "Open Travel Wardrobe", action: () => setActiveTab("travel_wardrobe") };
+      case "travelling":
+      case "unpacking":
+        return { label: "Start Return Flow", action: () => setShowReturnFlow(true) };
+      case "completed":
+        return { label: "Open Travel Wardrobe", action: () => setActiveTab("travel_wardrobe") };
+      default:
+        return { label: "Review Capsule", action: () => setActiveTab("capsule") };
+    }
+  })();
 
   async function refreshTripPacking(nextLinks = tripLinks) {
     if (!session || !trip) {
@@ -540,7 +770,6 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
 
     try {
       const derivedMap = new Map<string, string[]>();
-      const inventoryMap = new Map(inventoryItems.map((item) => [item.item_id.trim().toUpperCase(), item]));
 
       nextLinks.forEach((tripLink) => {
         const outfit = outfits.find((entry) => entry.id === tripLink.outfit_id);
@@ -556,6 +785,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         });
       });
 
+      const derivedInventoryItems = await getInventoryItemsByItemIds(supabase, [...derivedMap.keys()]);
+      const inventoryMap = new Map(
+        derivedInventoryItems.map((item) => [item.item_id.trim().toUpperCase(), item]),
+      );
+
       const currentWardrobeItems = await getTripWardrobeItems(supabase, trip.id);
       const currentLinks = await getTripWardrobeItemOutfitLinks(supabase, trip.id);
       const currentByItemId = new Map(currentWardrobeItems.map((item) => [item.wardrobe_item_id, item]));
@@ -570,7 +804,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
           source: existing?.source ?? "outfit",
           packing_status:
             existing?.packing_status ??
-            (inventoryItem && !isInventoryItemAvailableForNewUse(inventoryItem) ? "missing" : "pending"),
+            (inventoryItem && !isInventoryItemAvailableForNewUse(inventoryItem) ? "unavailable" : "not_packed"),
           notes: existing?.notes ?? null,
           sort_order: index,
         } as const;
@@ -631,9 +865,14 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         getTripWardrobeItems(supabase, trip.id),
         getTripWardrobeItemOutfitLinks(supabase, trip.id),
       ]);
+      const nextInventoryItems = await getInventoryItemsByItemIds(
+        supabase,
+        nextWardrobeItems.map((item) => item.wardrobe_item_id),
+      );
 
       setWardrobeItems(nextWardrobeItems);
       setWardrobeItemLinks(nextWardrobeItemLinks);
+      setInventoryItems(nextInventoryItems);
       setNotice("Wardrobe packing updated from selected looks.");
     } catch (error) {
       setErrorMessage(
@@ -893,13 +1132,18 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         user_id: session.user.id,
         wardrobe_item_id: item.item_id,
         source: "manual",
-        packing_status: "pending",
+        packing_status: "not_packed",
         notes: null,
         sort_order: wardrobeItems.length,
       },
     ]);
 
-    setWardrobeItems(await getTripWardrobeItems(supabase, trip.id));
+    const [nextWardrobeItems, nextInventoryItems] = await Promise.all([
+      getTripWardrobeItems(supabase, trip.id),
+      getInventoryItemsByItemIds(supabase, [item.item_id]),
+    ]);
+    setWardrobeItems(nextWardrobeItems);
+    setInventoryItems((current) => mergeInventoryCaches(current, nextInventoryItems));
     setNotice(`${item.item_name || item.item_id} added to packed wardrobe.`);
   }
 
@@ -915,6 +1159,11 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     ]);
     setWardrobeItems(nextItems);
     setWardrobeItemLinks(nextLinks);
+    setInventoryItems((current) =>
+      current.filter((inventoryItem) =>
+        nextItems.some((packedItem) => packedItem.wardrobe_item_id === inventoryItem.item_id),
+      ),
+    );
     setNotice(`${item.wardrobe_item_id} removed from packed wardrobe.`);
   }
 
@@ -933,12 +1182,68 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         wardrobe_item_id: item.wardrobe_item_id,
         source: item.source,
         packing_status: nextStatus,
+        capsule_status: item.capsule_status,
+        required: item.required,
+        bag_assignment: item.bag_assignment,
+        removed_from_capsule: item.removed_from_capsule,
+        removed_from_capsule_at: item.removed_from_capsule_at,
+        packed_at:
+          nextStatus === "packed"
+            ? item.packed_at ?? new Date().toISOString()
+            : nextStatus === "not_packed"
+              ? null
+              : item.packed_at,
         notes: item.notes,
         sort_order: item.sort_order,
       },
     ]);
 
-    setWardrobeItems(await getTripWardrobeItems(supabase, item.trip_id));
+    const nextWardrobeItems = await getTripWardrobeItems(supabase, item.trip_id);
+    setWardrobeItems(nextWardrobeItems);
+  }
+
+  async function handleUpdateWardrobeMeta(
+    item: TripWardrobeItem,
+    updates: Partial<
+      Pick<
+        TripWardrobeItem,
+        | "capsule_status"
+        | "required"
+        | "bag_assignment"
+        | "notes"
+        | "packing_status"
+        | "removed_from_capsule"
+        | "removed_from_capsule_at"
+      >
+    >,
+  ) {
+    if (!session) {
+      return;
+    }
+
+    await upsertTripWardrobeItems(supabase, [
+      {
+        trip_id: item.trip_id,
+        user_id: session.user.id,
+        wardrobe_item_id: item.wardrobe_item_id,
+        source: item.source,
+        packing_status: updates.packing_status ?? item.packing_status,
+        capsule_status: updates.capsule_status ?? item.capsule_status,
+        required: updates.required ?? item.required,
+        bag_assignment: updates.bag_assignment ?? item.bag_assignment,
+        removed_from_capsule: updates.removed_from_capsule ?? item.removed_from_capsule,
+        removed_from_capsule_at:
+          updates.removed_from_capsule_at === undefined
+            ? item.removed_from_capsule_at
+            : updates.removed_from_capsule_at,
+        packed_at: item.packed_at,
+        notes: updates.notes === undefined ? item.notes : updates.notes,
+        sort_order: item.sort_order,
+      },
+    ]);
+
+    const nextWardrobeItems = await getTripWardrobeItems(supabase, item.trip_id);
+    setWardrobeItems(nextWardrobeItems);
   }
 
   async function handleUpdateEssentialStatus(
@@ -951,6 +1256,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     setTripEssentialItems((current) =>
       current.map((entry) => (entry.id === item.id ? updated : entry)),
     );
+    setOpenEssentialMenuId(null);
   }
 
   async function handleSaveEditedEssential(item: TripEssentialItem) {
@@ -972,29 +1278,6 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     setEditingEssentialDraft(emptyEssentialDraft);
   }
 
-  async function handleDuplicateEssential(item: TripEssentialItem) {
-    if (!session || !trip) {
-      return;
-    }
-
-    const [duplicated] = await createTripEssentialItems(supabase, [
-      {
-        trip_id: trip.id,
-        user_id: session.user.id,
-        source_library_item_id: item.source_library_item_id,
-        title: `${item.title} Copy`,
-        category: item.category,
-        inclusion_type: item.inclusion_type,
-        packing_status: item.packing_status,
-        notes: item.notes,
-        sort_order: tripEssentialItems.length,
-      },
-    ]);
-
-    setTripEssentialItems((current) => [...current, duplicated]);
-    setNotice(`${item.title} duplicated.`);
-  }
-
   async function handleDeleteEssential(item: TripEssentialItem) {
     const confirmed = window.confirm(`Remove "${item.title}" from this trip checklist?`);
 
@@ -1011,7 +1294,10 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     setNotice(`${item.title} removed from this trip.`);
   }
 
-  async function handleAddInlineEssential(category: string) {
+  async function handleAddInlineEssential(
+    category: string,
+    nextStatus: TripEssentialItem["packing_status"] = "not_packed",
+  ) {
     if (!session || !trip || !newEssentialDraft.title.trim()) {
       return;
     }
@@ -1023,7 +1309,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
         title: newEssentialDraft.title.trim(),
         category,
         inclusion_type: "trip_specific",
-        packing_status: "pending",
+        packing_status: nextStatus,
         notes: newEssentialDraft.notes.trim() || null,
         sort_order: tripEssentialItems.length,
       },
@@ -1032,7 +1318,39 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     setTripEssentialItems((current) => [...current, created]);
     setAddingCategory(null);
     setNewEssentialDraft(emptyEssentialDraft);
-    setNotice(`${created.title} added to ${category}.`);
+    setNotice(
+      nextStatus === "to_buy"
+        ? `${created.title} added to your To Get list.`
+        : `${created.title} added to ${category}.`,
+    );
+  }
+
+  async function handleResetChecklist() {
+    const rowsToReset = tripEssentialItems.filter(
+      (item) =>
+        item.packing_status !== "to_buy" &&
+        item.packing_status !== "not_required" &&
+        item.packing_status !== "unavailable" &&
+        item.packing_status !== "not_packed",
+    );
+
+    if (rowsToReset.length === 0) {
+      return;
+    }
+
+    const updatedItems = await Promise.all(
+      rowsToReset.map((item) =>
+        updateTripEssentialItem(supabase, item.id, {
+          packing_status: "not_packed",
+        }),
+      ),
+    );
+
+    const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+    setTripEssentialItems((current) =>
+      current.map((item) => updatedMap.get(item.id) ?? item),
+    );
+    setNotice("Checklist reset.");
   }
 
   async function handleReorderEssentials(targetId: string) {
@@ -1066,6 +1384,95 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
     }
   }
 
+  async function handleAdvanceTripStatus(nextStatus: Trip["status"]) {
+    if (!trip) {
+      return;
+    }
+
+    const updated = await updateTrip(supabase, trip.id, {
+      title: trip.title,
+      destination: trip.destination ?? "",
+      notes: trip.notes ?? "",
+      start_date: trip.start_date ?? "",
+      end_date: trip.end_date ?? "",
+      baggage_limit: trip.baggage_limit ?? "",
+      baggage_notes: trip.baggage_notes ?? "",
+      luggage_type: trip.luggage_type ?? "",
+      number_of_bags: trip.number_of_bags,
+      weight_allowance: trip.weight_allowance ?? "",
+      luggage_dimensions: trip.luggage_dimensions ?? "",
+      luggage_assignment_notes: trip.luggage_assignment_notes ?? "",
+      status: nextStatus,
+    });
+
+    setTrip(updated);
+    if (nextStatus === "approved_for_packing") {
+      await refreshTripPacking();
+    }
+    if (nextStatus === "packing") {
+      setActiveTab("packing");
+    }
+    setNotice(`Trip status updated to ${formatTripStatus(updated.status)}.`);
+  }
+
+  async function handleUpdateReturnStatus(
+    wardrobeItemId: string,
+    returnStatus: TripItemReturn["return_status"],
+  ) {
+    if (!session || !trip) {
+      return;
+    }
+
+    const updated = await upsertTripItemReturn(supabase, {
+      trip_id: trip.id,
+      wardrobe_item_id: wardrobeItemId,
+      user_id: session.user.id,
+      return_status: returnStatus,
+    });
+
+    setTripItemReturns((current) => {
+      const next = current.filter((item) => item.wardrobe_item_id !== wardrobeItemId);
+      return [...next, updated];
+    });
+  }
+
+  async function handleCompleteTrip() {
+    if (!trip || !session) {
+      return;
+    }
+
+    setIsCompletingTrip(true);
+    try {
+      for (const item of travelWardrobeEntries) {
+        const returnRecord =
+          tripItemReturns.find((entry) => entry.wardrobe_item_id === item.row.wardrobe_item_id) ?? null;
+        const nextReturnStatus = returnRecord?.return_status ?? "returned_to_wardrobe";
+
+        const inventoryItem = item.inventoryItem;
+        if (inventoryItem) {
+          let nextInventoryStatus = inventoryItem.status ?? "Available";
+
+          if (nextReturnStatus === "returned_to_wardrobe") nextInventoryStatus = "Available";
+          if (nextReturnStatus === "in_laundry") nextInventoryStatus = "In Laundry";
+          if (nextReturnStatus === "damaged") nextInventoryStatus = "Archived";
+          if (nextReturnStatus === "lost" || nextReturnStatus === "discarded") nextInventoryStatus = "Discarded";
+          if (nextReturnStatus === "still_packed") nextInventoryStatus = "Packed";
+
+          if (inventoryItem.status !== nextInventoryStatus) {
+            await updateInventoryItemStatus(supabase, inventoryItem.id, nextInventoryStatus);
+          }
+        }
+
+        await handleUpdateReturnStatus(item.row.wardrobe_item_id, nextReturnStatus);
+      }
+
+      await handleAdvanceTripStatus("completed");
+      setShowReturnFlow(false);
+    } finally {
+      setIsCompletingTrip(false);
+    }
+  }
+
   const detailRows = useMemo(() => {
     if (!trip) {
       return [];
@@ -1075,7 +1482,8 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
       ["Status", formatTripStatus(trip.status)],
       ["Dates", formatTripDateRange(trip.start_date, trip.end_date)],
       ["Destination", trip.destination ?? "Not yet added"],
-      ["Baggage", trip.baggage_limit ?? "Not yet added"],
+      ["Luggage", trip.luggage_type ?? trip.baggage_limit ?? "Not yet added"],
+      ["Allowance", trip.weight_allowance ?? trip.baggage_limit ?? "Not yet added"],
       ["Looks", `${selectedOutfitEntries.length}`],
       ["Wardrobe pieces", `${wardrobeItems.length}`],
       ["Essentials", `${tripEssentialItems.length}`],
@@ -1111,18 +1519,18 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
   const missingSummaryRows = useMemo(
     () => [
       ...wardrobeEntries
-        .filter((entry) => entry.row.packing_status === "missing" && !entry.isUnavailable)
+        .filter((entry) => entry.row.packing_status === "waiting_for_laundry" || entry.row.packing_status === "to_buy")
         .map((entry) => ({
           id: entry.row.id,
           label: entry.inventoryItem?.item_name || entry.row.wardrobe_item_id,
-          meta: `Wardrobe • ${entry.row.wardrobe_item_id}`,
+          meta: `Wardrobe • ${formatPackingStatusLabel(entry.row.packing_status)}`,
         })),
       ...tripEssentialItems
-        .filter((item) => item.packing_status === "missing")
+        .filter((item) => item.packing_status === "to_buy" || item.packing_status === "unavailable")
         .map((item) => ({
           id: item.id,
           label: item.title,
-          meta: `Essential • ${item.category}`,
+          meta: `Essential • ${formatPackingStatusLabel(item.packing_status)}`,
         })),
     ],
     [tripEssentialItems, wardrobeEntries],
@@ -1214,6 +1622,16 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                   <p className="eyebrow">Overview</p>
                   <DetailGrid rows={detailRows} />
                   {trip.notes ? <p className="detail-description">{trip.notes}</p> : null}
+                  <div className="travel-inline-actions">
+                    {primaryTripAction ? (
+                      <button type="button" className="primary-button" onClick={primaryTripAction.action}>
+                        {primaryTripAction.label}
+                      </button>
+                    ) : null}
+                    <button type="button" className="ghost-button" onClick={() => setShowReturnFlow((current) => !current)}>
+                      {showReturnFlow ? "Hide Return Flow" : "Start Return Flow"}
+                    </button>
+                  </div>
                 </article>
 
                 <article className="detail-card travel-summary-card-panel">
@@ -1259,19 +1677,128 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                 </article>
 
                 <article className="detail-card">
-                  <p className="eyebrow">Packing snapshot</p>
+                  <p className="eyebrow">Capsule snapshot</p>
                   <div className="travel-quick-stats">
-                    <TravelStatCard label="Packed items" value={`${summaryStats.packedTotal}`} />
-                    <TravelStatCard label="Not required" value={`${summaryStats.notRequiredCount}`} />
-                    <TravelStatCard label="Missing" value={`${summaryStats.missingCount}`} />
+                    <TravelStatCard label="Capsule items" value={`${capsuleItemCount}`} />
+                    <TravelStatCard label="Optional" value={`${optionalCapsuleItemsCount}`} />
+                    <TravelStatCard label="To buy" value={`${toBuyCapsuleItemsCount}`} />
                     <TravelStatCard label="Looks selected" value={`${summaryStats.looksTotal}`} />
                   </div>
                 </article>
+
+                <article className="detail-card">
+                  <p className="eyebrow">Luggage</p>
+                  <DetailGrid
+                    rows={[
+                      ["Type", trip.luggage_type ?? "Not set"],
+                      ["Bags", `${trip.number_of_bags}`],
+                      ["Allowance", trip.weight_allowance ?? trip.baggage_limit ?? "Not set"],
+                      ["Dimensions", trip.luggage_dimensions ?? "Not set"],
+                    ]}
+                  />
+                  {trip.luggage_assignment_notes ? (
+                    <p className="detail-description">{trip.luggage_assignment_notes}</p>
+                  ) : null}
+                </article>
+
+                <article className="detail-card">
+                  <p className="eyebrow">Readiness</p>
+                  <div className="travel-count-list">
+                    <div className="travel-count-row">
+                      <span>Unique wardrobe items</span>
+                      <strong>{capsuleItemCount}</strong>
+                    </div>
+                    <div className="travel-count-row">
+                      <span>Incomplete looks</span>
+                      <strong>{incompleteLookCount}</strong>
+                    </div>
+                    <div className="travel-count-row">
+                      <span>Unresolved wardrobe items</span>
+                      <strong>{unresolvedWardrobeCount}</strong>
+                    </div>
+                    <div className="travel-count-row">
+                      <span>Capsule ready for review</span>
+                      <strong>{approvedCapsuleReady ? "Yes" : "No"}</strong>
+                    </div>
+                  </div>
+                </article>
+
+                {showReturnFlow ? (
+                  <article className="detail-card">
+                    <p className="eyebrow">Return from trip</p>
+                    <p className="detail-description">
+                      Mark what happens to each trip wardrobe item before completing the trip.
+                    </p>
+                    <div className="travel-summary-look-list">
+                      {travelWardrobeEntries.map(({ row, inventoryItem }) => {
+                        const currentReturnStatus =
+                          tripItemReturns.find((entry) => entry.wardrobe_item_id === row.wardrobe_item_id)?.return_status ??
+                          "returned_to_wardrobe";
+
+                        return (
+                          <div className="travel-summary-look-row" key={row.id}>
+                            <span>{inventoryItem?.item_name || row.wardrobe_item_id}</span>
+                            <select
+                              className="filter-select"
+                              value={currentReturnStatus}
+                              onChange={(event) =>
+                                void handleUpdateReturnStatus(
+                                  row.wardrobe_item_id,
+                                  event.target.value as TripItemReturn["return_status"],
+                                )
+                              }
+                            >
+                              {[
+                                "returned_to_wardrobe",
+                                "in_laundry",
+                                "damaged",
+                                "lost",
+                                "discarded",
+                                "still_packed",
+                              ].map((option) => (
+                                <option key={option} value={option}>
+                                  {formatTripReturnStatus(option as TripItemReturn["return_status"])}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => void handleCompleteTrip()}
+                      disabled={isCompletingTrip}
+                    >
+                      {isCompletingTrip ? "Completing..." : "Complete Trip"}
+                    </button>
+                  </article>
+                ) : null}
               </div>
             ) : null}
 
-            {activeTab === "looks" ? (
+            {activeTab === "capsule" ? (
               <div className="dashboard dashboard-tight">
+                <div className="travel-summary-grid">
+                  <article className="detail-card travel-summary-card">
+                    <strong>{capsuleItemCount}</strong>
+                    <span>Unique capsule items</span>
+                  </article>
+                  <article className="detail-card travel-summary-card">
+                    <strong>{optionalCapsuleItemsCount}</strong>
+                    <span>Optional items</span>
+                  </article>
+                  <article className="detail-card travel-summary-card">
+                    <strong>{toBuyCapsuleItemsCount}</strong>
+                    <span>Marked to buy</span>
+                  </article>
+                  <article className="detail-card travel-summary-card">
+                    <strong>{incompleteLookCount}</strong>
+                    <span>Incomplete looks</span>
+                  </article>
+                </div>
+
                 <div className="travel-shell-grid packing-shell-grid">
                   <article className="detail-card">
                     <div className="results-bar">
@@ -1494,7 +2021,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     )}
                   </article>
 
-                  <article className="detail-card">
+                  <article className="detail-card travel-capsule-picker-card">
                     <div className="search-panel search-panel-compact">
                       <label className="search-label" htmlFor="trip-look-search">
                         Search and select lookbooks
@@ -1509,7 +2036,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                       />
                     </div>
 
-                    <div className="travel-lookbook-grid">
+                    <div className="travel-lookbook-grid travel-capsule-picker-grid">
                       {filteredOutfits.map((outfit) => {
                         const isSelected = selectedOutfitIds.has(outfit.id);
                         const imageUrl = getOutfitDisplayImage(outfit);
@@ -1518,7 +2045,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                           <button
                             key={outfit.id}
                             type="button"
-                            className={`travel-lookbook-card ${isSelected ? "is-selected" : ""}`}
+                            className={`travel-lookbook-card travel-capsule-picker-lookbook-card ${isSelected ? "is-selected" : ""}`}
                             onClick={() => void handleToggleOutfit(outfit)}
                           >
                             <div className="travel-lookbook-media">
@@ -1547,6 +2074,243 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     </div>
                   </article>
                 </div>
+
+                <div className="travel-shell-grid packing-shell-grid">
+                  <article className="detail-card">
+                    <div className="results-bar">
+                      <div className="results-copy">
+                        <p className="results-heading">Capsule items</p>
+                        <p>Every trip wardrobe piece lives here first. Packing is generated from this capsule.</p>
+                      </div>
+                      {trip.status === "draft" ? (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => void handleAdvanceTripStatus("ready_for_review")}
+                          disabled={!approvedCapsuleReady}
+                        >
+                          Mark ready for review
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {wardrobeEntries.length === 0 ? (
+                      <EmptyState
+                        compact
+                        title="No capsule items yet"
+                        description="Add lookbooks or search the wardrobe below to start building this trip capsule."
+                      />
+                    ) : (
+                      <div className="inventory-grid">
+                        {wardrobeEntries.map(({ row, inventoryItem, usedInOutfits, isUnavailable }) => {
+                          const imageUrl = inventoryItem ? getDisplayImage(inventoryItem.image) : null;
+
+                          return (
+                            <article
+                              className={`inventory-card travel-packing-card ${isUnavailable ? "is-unavailable" : ""}`}
+                              key={row.id}
+                            >
+                              <div className="card-image-wrap">
+                                {imageUrl ? (
+                                  <TravelPackingImage
+                                    src={imageUrl}
+                                    alt={inventoryItem?.item_name || row.wardrobe_item_id}
+                                  />
+                                ) : (
+                                  <div className="card-image-fallback">No image available</div>
+                                )}
+                              </div>
+
+                              <div className="inventory-card-body">
+                                <div className="inventory-card-copy">
+                                  <p className="sku-label">{row.wardrobe_item_id}</p>
+                                  <h2>{inventoryItem?.item_name || row.wardrobe_item_id}</h2>
+                                  <div className="inventory-card-meta">
+                                    <span>{inventoryItem?.category || "Wardrobe item"}</span>
+                                    <span>{row.source === "manual" ? "Manual" : "From look"}</span>
+                                  </div>
+                                </div>
+
+                                <div className="travel-item-status-row">
+                                  <span className={`trip-status-pill status-${row.capsule_status}`}>
+                                    {formatTripCapsuleStatus(row.capsule_status)}
+                                  </span>
+                                  <span className={`trip-status-pill status-${row.packing_status}`}>
+                                    {formatPackingStatusLabel(row.packing_status)}
+                                  </span>
+                                </div>
+
+                                <div className="travel-used-in">
+                                  <span className="travel-used-in-label">Used in:</span>
+                                  {usedInOutfits.length === 0 ? (
+                                    <span className="trip-meta-pill trip-meta-pill-muted">Manual item</span>
+                                  ) : (
+                                    usedInOutfits.map((outfit) => (
+                                      <span key={outfit.id} className="trip-meta-pill">
+                                        {outfit.title}
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+
+                                <div className="travel-shell-grid">
+                                  <label className="field">
+                                    <span>Capsule status</span>
+                                    <select
+                                      className="filter-select"
+                                      value={row.capsule_status}
+                                      onChange={(event) =>
+                                        void handleUpdateWardrobeMeta(row, {
+                                          capsule_status: event.target.value as TripWardrobeItem["capsule_status"],
+                                        })
+                                      }
+                                    >
+                                      {(["confirmed", "optional", "to_buy", "excluded"] as const).map((status) => (
+                                        <option key={status} value={status}>
+                                          {formatTripCapsuleStatus(status)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+
+                                  <label className="field">
+                                    <span>Bag assignment</span>
+                                    <select
+                                      className="filter-select"
+                                      value={row.bag_assignment ?? "Unassigned"}
+                                      onChange={(event) =>
+                                        void handleUpdateWardrobeMeta(row, {
+                                          bag_assignment: event.target.value as TripWardrobeItem["bag_assignment"],
+                                        })
+                                      }
+                                    >
+                                      {(["Unassigned", "Checked suitcase", "Cabin bag", "Personal item", "Wearing for travel"] as const).map(
+                                        (assignment) => (
+                                          <option key={assignment} value={assignment}>
+                                            {assignment}
+                                          </option>
+                                        ),
+                                      )}
+                                    </select>
+                                  </label>
+                                </div>
+
+                                {isUnavailable ? (
+                                  <p className="linked-item-warning">
+                                    This item is unavailable and will be flagged during review and packing.
+                                  </p>
+                                ) : null}
+
+                                <div className="inventory-card-actions">
+                                  <button
+                                    type="button"
+                                    className={`ghost-button studio-mini-button ${row.required ? "is-active" : ""}`}
+                                    onClick={() =>
+                                      void handleUpdateWardrobeMeta(row, {
+                                        required: !row.required,
+                                      })
+                                    }
+                                  >
+                                    {row.required ? "Required" : "Optional"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ghost-button studio-mini-button danger-button"
+                                    onClick={() => void handleRemoveWardrobeItem(row)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </article>
+
+                  <article className="detail-card">
+                    <div className="results-bar">
+                      <div className="results-copy">
+                        <p className="results-heading">Add wardrobe items</p>
+                        <p>Search first to keep Travel light and avoid loading the whole wardrobe at once.</p>
+                      </div>
+                    </div>
+
+                    <div className="search-panel search-panel-compact">
+                      <label className="search-label" htmlFor="trip-manual-add-search">
+                        Search wardrobe for manual adds
+                      </label>
+                      <input
+                        id="trip-manual-add-search"
+                        className="search-input"
+                        type="search"
+                        value={manualAddQuery}
+                        placeholder="Search by item, ID, category, or colour"
+                        onChange={(event) => setManualAddQuery(event.target.value)}
+                      />
+                    </div>
+
+                    {!manualAddQuery.trim() ? (
+                      <EmptyState
+                        compact
+                        title="Search to add a wardrobe piece"
+                        description="Type an item name, ID, category, or colour to find extra pieces for this trip capsule."
+                      />
+                    ) : isManualSearchLoading ? (
+                      <EmptyState
+                        compact
+                        title="Searching wardrobe"
+                        description="Finding matching wardrobe pieces for this trip capsule."
+                      />
+                    ) : manualInventoryOptions.length === 0 ? (
+                      <EmptyState
+                        compact
+                        title="No extra wardrobe pieces found"
+                        description="Try another search term to load different wardrobe pieces."
+                      />
+                    ) : (
+                      <>
+                        <div className="results-copy travel-manual-summary">
+                          <p>
+                            {manualInventoryOptions.length} available piece{manualInventoryOptions.length === 1 ? "" : "s"}
+                          </p>
+                        </div>
+
+                        <div className="travel-manual-scroll">
+                          <div className="travel-manual-grid">
+                            {manualInventoryOptions.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="travel-manual-card"
+                                onClick={() => void handleAddManualItem(item)}
+                              >
+                                <div className="travel-manual-card-media">
+                                  {getDisplayImage(item.image) ? (
+                                    <RemoteImage
+                                      src={getDisplayImage(item.image)!}
+                                      alt={item.item_name || item.item_id}
+                                      className="travel-lookbook-image"
+                                    />
+                                  ) : (
+                                    <div className="card-image-fallback">No image available</div>
+                                  )}
+                                </div>
+                                <div className="travel-manual-card-body">
+                                  <p className="sku-label">{item.item_id}</p>
+                                  <h3>{item.item_name || item.item_id}</h3>
+                                  <p>{item.category || "Wardrobe piece"}</p>
+                                </div>
+                                <span className="trip-meta-pill">Add to capsule</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </article>
+                </div>
               </div>
             ) : null}
 
@@ -1555,16 +2319,25 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                 <div className="results-bar inventory-overview">
                   <div className="results-copy">
                     <p className="results-heading">Wardrobe packing</p>
-                    <p>Visual packing generated from selected looks, with room for manual additions.</p>
+                    <p>Packing is generated from your capsule. Add or remove items in Capsule, then return here to track what is physically packed.</p>
                   </div>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => void refreshTripPacking()}
-                    disabled={isSyncing}
-                  >
-                    {isSyncing ? "Refreshing..." : "Refresh wardrobe"}
-                  </button>
+                  <div className="travel-inline-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => setActiveTab("capsule")}
+                    >
+                      Add to capsule
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => void refreshTripPacking()}
+                      disabled={isSyncing}
+                    >
+                      {isSyncing ? "Refreshing..." : "Refresh packing"}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="travel-summary-grid">
@@ -1651,12 +2424,9 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                         <article className="inventory-card travel-packing-card" key={row.id}>
                           <div className="card-image-wrap">
                             {imageUrl ? (
-                              <Image
+                              <TravelPackingImage
                                 src={imageUrl}
                                 alt={inventoryItem?.item_name || row.wardrobe_item_id}
-                                fill
-                                sizes="(max-width: 768px) 50vw, 25vw"
-                                className="card-image"
                               />
                             ) : (
                               <div className="card-image-fallback">No image available</div>
@@ -1693,7 +2463,7 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                             </div>
 
                             <div className="packing-status-row">
-                              {(["pending", "packed", "not_required", "missing"] as const).map((status) => (
+                              {(["not_packed", "packed", "not_required", "waiting_for_laundry", "to_buy", "unavailable"] as const).map((status) => (
                                 <button
                                   key={status}
                                   type="button"
@@ -1736,12 +2506,9 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                               <article className="inventory-card travel-packing-card is-unavailable" key={row.id}>
                                 <div className="card-image-wrap">
                                   {imageUrl ? (
-                                    <Image
+                                    <TravelPackingImage
                                       src={imageUrl}
                                       alt={inventoryItem?.item_name || row.wardrobe_item_id}
-                                      fill
-                                      sizes="(max-width: 768px) 50vw, 25vw"
-                                      className="card-image"
                                     />
                                   ) : (
                                     <div className="card-image-fallback">No image available</div>
@@ -1787,43 +2554,13 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                 )}
 
                 <article className="detail-card">
-                  <div className="results-bar">
-                    <div className="results-copy">
-                      <p className="results-heading">Manual add</p>
-                      <p>Add extra wardrobe pieces beyond the selected looks.</p>
-                    </div>
-                  </div>
-
-                  <div className="travel-manual-grid">
-                    {manualInventoryOptions.slice(0, 8).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="travel-manual-card"
-                        onClick={() => void handleAddManualItem(item)}
-                      >
-                        <div className="travel-manual-card-media">
-                          {getDisplayImage(item.image) ? (
-                            <Image
-                              src={getDisplayImage(item.image)!}
-                              alt={item.item_name || item.item_id}
-                              fill
-                              sizes="(max-width: 768px) 40vw, 12vw"
-                              className="travel-lookbook-image"
-                            />
-                          ) : (
-                            <div className="card-image-fallback">No image available</div>
-                          )}
-                        </div>
-                        <div className="travel-manual-card-body">
-                          <p className="sku-label">{item.item_id}</p>
-                          <h3>{item.item_name || item.item_id}</h3>
-                          <p>{item.category || "Wardrobe piece"}</p>
-                        </div>
-                        <span className="trip-meta-pill">Add to trip</span>
-                      </button>
-                    ))}
-                  </div>
+                  <p className="eyebrow">Packing workflow</p>
+                  <p className="detail-description">
+                    Need another item? Add it in Capsule so packing stays in sync with the trip plan.
+                  </p>
+                  <button type="button" className="ghost-button" onClick={() => setActiveTab("capsule")}>
+                    Open capsule
+                  </button>
                 </article>
               </div>
             ) : null}
@@ -1833,46 +2570,72 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                 <div className="results-bar inventory-overview">
                   <div className="results-copy">
                     <p className="results-heading">Trip essentials</p>
-                    <p>Collapse categories, add inline, drag to reorder, and mark progress as you pack.</p>
+                    <p>Your trip checklist and shopping list live here.</p>
                   </div>
                 </div>
 
-                {Object.keys(essentialsByCategory).length === 0 ? (
+                <div className="trip-essentials-viewbar">
+                  <button
+                    type="button"
+                    className={`trip-essentials-viewchip ${essentialsView === "checklist" ? "is-active" : ""}`}
+                    onClick={() => setEssentialsView("checklist")}
+                  >
+                    Checklist
+                  </button>
+                  <button
+                    type="button"
+                    className={`trip-essentials-viewchip ${essentialsView === "to_get" ? "is-active" : ""}`}
+                    onClick={() => setEssentialsView("to_get")}
+                  >
+                    To Get
+                    {toGetEssentialItems.length > 0 ? (
+                      <span className="trip-essentials-viewcount">{toGetEssentialItems.length}</span>
+                    ) : null}
+                  </button>
+                </div>
+
+                {visibleEssentialsCategoryProgress.length === 0 ? (
                   <EmptyState
                     compact
-                    title="No essentials for this trip yet"
-                    description="Add essentials to the library or create trip-specific items inline."
+                    title={
+                      essentialsView === "to_get"
+                        ? "Nothing on your To Get list"
+                        : "No checklist items for this trip yet"
+                    }
+                    description={
+                      essentialsView === "to_get"
+                        ? "Mark checklist items as To Get or add new shopping items here."
+                        : "Add essentials to start building this trip checklist."
+                    }
                   />
                 ) : (
-                  <div className="essentials-groups">
-                    {essentialsCategoryProgress.map(({ category, items, packedCount, totalCount, requiredCount, resolvedCount, progress }) => {
+                  <div className="trip-essentials-groups">
+                    {visibleEssentialsCategoryProgress.map(({ category, items, packedCount, totalCount }) => {
                         const isCollapsed = collapsedCategories[category] ?? false;
+                        const addKey = `${essentialsView}:${category}`;
 
                         return (
-                          <section className="detail-card essentials-group-card" key={category}>
-                            <div className="results-bar">
-                              <div className="results-copy">
-                                <p className="results-heading">{category}</p>
-                                <p>
-                                  {packedCount} packed • {resolvedCount} of {requiredCount} required resolved
-                                </p>
+                          <section className="trip-essentials-category-card" key={category}>
+                            <div className="trip-essentials-category-head">
+                              <div className="trip-essentials-category-copy">
+                                <h3>{category}</h3>
                               </div>
-                              <div className="travel-essentials-toolbar">
-                                <span className="trip-meta-pill trip-meta-pill-muted">
-                                  {packedCount}/{totalCount}
+                              <div className="trip-essentials-category-actions">
+                                <span className="trip-essentials-category-count">
+                                  {essentialsView === "to_get" ? totalCount : `${packedCount}/${totalCount}`}
                                 </span>
                                 <button
                                   type="button"
-                                  className="ghost-button studio-mini-button"
+                                  className="trip-essentials-icon-button"
                                   onClick={() =>
-                                    setAddingCategory((current) => (current === category ? null : category))
+                                    setAddingCategory((current) => (current === addKey ? null : addKey))
                                   }
                                 >
-                                  Add item
+                                  +
                                 </button>
                                 <button
                                   type="button"
-                                  className="ghost-button studio-mini-button"
+                                  className="trip-essentials-icon-button"
                                   onClick={() =>
                                     setCollapsedCategories((current) => ({
                                       ...current,
@@ -1880,22 +2643,15 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                     }))
                                   }
                                 >
-                                  {isCollapsed ? "Expand" : "Collapse"}
+                                  {isCollapsed ? "+" : "−"}
                                 </button>
                               </div>
                             </div>
 
-                            <div className="travel-category-progress">
-                              <div
-                                className="travel-category-progress-bar"
-                                style={{ width: `${Math.max(6, progress)}%` }}
-                              />
-                            </div>
-
-                            {addingCategory === category ? (
-                              <div className="travel-inline-essential-editor">
+                            {addingCategory === addKey ? (
+                              <div className="trip-essentials-addrow">
                                 <input
-                                  className="text-input"
+                                  className="trip-essentials-addinput"
                                   value={newEssentialDraft.title}
                                   placeholder={`Add ${category} item`}
                                   onChange={(event) =>
@@ -1916,17 +2672,21 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                     }))
                                   }
                                 />
-                                <div className="travel-inline-actions">
                                   <button
                                     type="button"
-                                    className="primary-button studio-mini-button"
-                                    onClick={() => void handleAddInlineEssential(category)}
+                                    className="trip-essentials-inline-button is-primary"
+                                    onClick={() =>
+                                      void handleAddInlineEssential(
+                                        category,
+                                        essentialsView === "to_get" ? "to_buy" : "not_packed",
+                                      )
+                                    }
                                   >
                                     Save
                                   </button>
                                   <button
                                     type="button"
-                                    className="ghost-button studio-mini-button"
+                                    className="trip-essentials-inline-button"
                                     onClick={() => {
                                       setAddingCategory(null);
                                       setNewEssentialDraft(emptyEssentialDraft);
@@ -1934,31 +2694,51 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                   >
                                     Cancel
                                   </button>
-                                </div>
                               </div>
                             ) : null}
 
                             {!isCollapsed ? (
-                              <div className="essentials-list">
+                              <div className="trip-essentials-list">
                                 {items.map((item) => {
                                   const isEditing = editingEssentialId === item.id;
 
                                   return (
                                     <article
-                                      className={`essential-row status-${item.packing_status}`}
+                                      className={`trip-essentials-row status-${item.packing_status}`}
                                       key={item.id}
                                       draggable
                                       onDragStart={() => setDraggedEssentialId(item.id)}
                                       onDragOver={(event) => event.preventDefault()}
                                       onDrop={() => void handleReorderEssentials(item.id)}
                                     >
-                                      <div className="essential-row-copy">
-                                        <div className="essential-row-head">
+                                      <div className="trip-essentials-row-main">
+                                        {essentialsView === "checklist" ? (
+                                          <button
+                                            type="button"
+                                            className={`trip-essentials-check ${item.packing_status === "packed" ? "is-checked" : ""}`}
+                                            onClick={() =>
+                                              void handleUpdateEssentialStatus(
+                                                item,
+                                                item.packing_status === "packed" ? "not_packed" : "packed",
+                                              )
+                                            }
+                                            aria-label={
+                                              item.packing_status === "packed"
+                                                ? `Mark ${item.title} not packed`
+                                                : `Mark ${item.title} packed`
+                                            }
+                                          >
+                                            <span />
+                                          </button>
+                                        ) : (
+                                          <span className="trip-essentials-shopping-dot" aria-hidden="true" />
+                                        )}
+
+                                        <div className="trip-essentials-row-copy">
                                           <div>
-                                            <p className="sku-label">Essential</p>
                                             {isEditing ? (
                                               <input
-                                                className="text-input"
+                                                className="trip-essentials-edit-input"
                                                 value={editingEssentialDraft.title}
                                                 onChange={(event) =>
                                                   setEditingEssentialDraft((current) => ({
@@ -1968,16 +2748,12 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                                 }
                                               />
                                             ) : (
-                                              <h2>{item.title}</h2>
+                                              <strong>{item.title}</strong>
                                             )}
                                           </div>
-                                          <span className="trip-meta-pill">
-                                            {formatEssentialInclusionType(item.inclusion_type)}
-                                          </span>
-                                        </div>
                                         {isEditing ? (
                                           <textarea
-                                            className="text-area-input"
+                                            className="trip-essentials-edit-notes"
                                             value={editingEssentialDraft.notes}
                                             onChange={(event) =>
                                               setEditingEssentialDraft((current) => ({
@@ -1986,37 +2762,25 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                               }))
                                             }
                                           />
-                                        ) : item.notes ? (
-                                          <p className="trip-card-notes">{item.notes}</p>
+                                          ) : item.notes ? (
+                                          <small>{item.notes}</small>
                                         ) : null}
+                                        </div>
                                       </div>
 
-                                      <div className="packing-status-row">
-                                        {(["pending", "packed", "not_required", "missing"] as const).map((status) => (
-                                          <button
-                                            key={status}
-                                            type="button"
-                                            className={`status-toggle ${item.packing_status === status ? "is-active" : ""}`}
-                                            onClick={() => void handleUpdateEssentialStatus(item, status)}
-                                          >
-                                            {status.replace("_", " ")}
-                                          </button>
-                                        ))}
-                                      </div>
-
-                                      <div className="essential-row-actions">
+                                      <div className="trip-essentials-row-actions">
                                         {isEditing ? (
                                           <>
                                             <button
                                               type="button"
-                                              className="primary-button studio-mini-button"
+                                              className="trip-essentials-inline-button is-primary"
                                               onClick={() => void handleSaveEditedEssential(item)}
                                             >
                                               Save
                                             </button>
                                             <button
                                               type="button"
-                                              className="ghost-button studio-mini-button"
+                                              className="trip-essentials-inline-button"
                                               onClick={() => {
                                                 setEditingEssentialId(null);
                                                 setEditingEssentialDraft(emptyEssentialDraft);
@@ -2026,45 +2790,76 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                                             </button>
                                           </>
                                         ) : (
-                                          <>
+                                          <div className="trip-essentials-menu-wrap">
                                             <button
                                               type="button"
-                                              className="ghost-button studio-mini-button"
-                                              onClick={() => void handleUpdateEssentialStatus(
-                                                item,
-                                                item.packing_status === "packed" ? "pending" : "packed",
-                                              )}
+                                              className="trip-essentials-menu-button"
+                                              onClick={() =>
+                                                setOpenEssentialMenuId((current) =>
+                                                  current === item.id ? null : item.id,
+                                                )
+                                              }
                                             >
-                                              {item.packing_status === "packed" ? "Unpack" : "Pack"}
+                                              ···
                                             </button>
-                                            <button
-                                              type="button"
-                                              className="ghost-button studio-mini-button"
-                                              onClick={() => handleDuplicateEssential(item)}
-                                            >
-                                              Duplicate
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="ghost-button studio-mini-button"
-                                              onClick={() => {
-                                                setEditingEssentialId(item.id);
-                                                setEditingEssentialDraft({
-                                                  title: item.title,
-                                                  notes: item.notes ?? "",
-                                                });
-                                              }}
-                                            >
-                                              Edit inline
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="ghost-button studio-mini-button danger-button"
-                                              onClick={() => void handleDeleteEssential(item)}
-                                            >
-                                              Delete
-                                            </button>
-                                          </>
+
+                                            {openEssentialMenuId === item.id ? (
+                                              <div className="trip-essentials-menu">
+                                                {essentialsView === "to_get" ? (
+                                                  <button
+                                                    type="button"
+                                                    className="trip-essentials-menu-item"
+                                                    onClick={() => void handleUpdateEssentialStatus(item, "not_packed")}
+                                                  >
+                                                    Mark purchased
+                                                  </button>
+                                                ) : (
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      className="trip-essentials-menu-item"
+                                                      onClick={() => void handleUpdateEssentialStatus(item, "to_buy")}
+                                                    >
+                                                      Mark To Get
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="trip-essentials-menu-item"
+                                                      onClick={() =>
+                                                        void handleUpdateEssentialStatus(
+                                                          item,
+                                                          item.packing_status === "packed" ? "not_packed" : "packed",
+                                                        )
+                                                      }
+                                                    >
+                                                      {item.packing_status === "packed" ? "Mark not packed" : "Mark packed"}
+                                                    </button>
+                                                  </>
+                                                )}
+                                                <button
+                                                  type="button"
+                                                  className="trip-essentials-menu-item"
+                                                  onClick={() => {
+                                                    setEditingEssentialId(item.id);
+                                                    setEditingEssentialDraft({
+                                                      title: item.title,
+                                                      notes: item.notes ?? "",
+                                                    });
+                                                    setOpenEssentialMenuId(null);
+                                                  }}
+                                                >
+                                                  Edit
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  className="trip-essentials-menu-item danger"
+                                                  onClick={() => void handleDeleteEssential(item)}
+                                                >
+                                                  Delete
+                                                </button>
+                                              </div>
+                                            ) : null}
+                                          </div>
                                         )}
                                       </div>
                                     </article>
@@ -2077,10 +2872,20 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                       })}
                   </div>
                 )}
+
+                {essentialsView === "checklist" ? (
+                  <button
+                    type="button"
+                    className="trip-essentials-reset"
+                    onClick={() => void handleResetChecklist()}
+                  >
+                    Reset all checks
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
-            {activeTab === "summary" ? (
+            {activeTab === "packed_summary" ? (
               <div className="dashboard dashboard-tight">
                 <div className="travel-summary-dashboard">
                   <article className={`detail-card travel-summary-header ${summaryStats.suitcaseReady ? "is-complete" : ""}`}>
@@ -2180,12 +2985,37 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                     <article className="detail-card">
                       <p className="eyebrow">Looks packed for this trip</p>
                       <div className="travel-summary-look-list">
-                        {selectedOutfitEntries.map(({ outfit }) => (
-                          <div className="travel-summary-look-row" key={outfit.id}>
-                            <span>{outfit.title}</span>
-                            <strong>{outfit.item_ids.length} items</strong>
+                        {selectedOutfitEntries.length === 0 ? (
+                          <div className="travel-summary-look-row">
+                            <span>No looks selected yet</span>
+                            <strong>0</strong>
                           </div>
-                        ))}
+                        ) : (
+                          selectedOutfitEntries.map(({ outfit }) => {
+                            const packedCount = outfit.item_ids.filter((itemId) => {
+                              const matchingItem = wardrobeEntries.find((entry) => entry.row.wardrobe_item_id === itemId);
+                              return (
+                                matchingItem &&
+                                (matchingItem.row.packing_status === "packed" ||
+                                  matchingItem.row.bag_assignment === "Wearing for travel")
+                              );
+                            }).length;
+                            const requiredCount = outfit.item_ids.length;
+
+                            let stateLabel = "Ready";
+                            if (packedCount === 0) stateLabel = "Incomplete";
+                            else if (packedCount < requiredCount) stateLabel = "Almost ready";
+
+                            return (
+                              <div className="travel-summary-look-row" key={outfit.id}>
+                                <span>{outfit.title}</span>
+                                <strong>
+                                  {stateLabel} • {packedCount}/{requiredCount}
+                                </strong>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </article>
 
@@ -2298,6 +3128,139 @@ export function TripDetailShell({ tripId }: { tripId: string }) {
                 </div>
               </div>
             ) : null}
+
+            {activeTab === "travel_wardrobe" ? (
+              <div className="dashboard dashboard-tight">
+                <div className="results-bar inventory-overview">
+                  <div className="results-copy">
+                    <p className="results-heading">Travel wardrobe</p>
+                    <p>Only pieces physically available on the trip appear here, so you can style from what is actually with you.</p>
+                  </div>
+                  <div className="travel-inline-actions">
+                    <button type="button" className="ghost-button" onClick={() => setActiveTab("packing")}>
+                      Open packing
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => setShowReturnFlow(true)}>
+                      Start return flow
+                    </button>
+                  </div>
+                </div>
+
+                <div className="travel-summary-grid">
+                  <article className="detail-card travel-summary-card">
+                    <strong>{travelWardrobeEntries.length}</strong>
+                    <span>Available on trip</span>
+                  </article>
+                  <article className="detail-card travel-summary-card">
+                    <strong>{readyTravelLooks.length}</strong>
+                    <span>Ready looks</span>
+                  </article>
+                  <article className="detail-card travel-summary-card">
+                    <strong>{partialTravelLooks.length}</strong>
+                    <span>Partial looks</span>
+                  </article>
+                </div>
+
+                {travelWardrobeEntries.length === 0 ? (
+                  <EmptyState
+                    compact
+                    title="No travel wardrobe available yet"
+                    description="Pack wardrobe pieces or mark them as wearing for travel to build the trip wardrobe."
+                  />
+                ) : (
+                  <div className="inventory-grid">
+                    {travelWardrobeEntries.map(({ row, inventoryItem, usedInOutfits }) => {
+                      const imageUrl = inventoryItem ? getDisplayImage(inventoryItem.image) : null;
+
+                      return (
+                        <article className="inventory-card travel-packing-card" key={row.id}>
+                          <div className="card-image-wrap">
+                            {imageUrl ? (
+                              <TravelPackingImage
+                                src={imageUrl}
+                                alt={inventoryItem?.item_name || row.wardrobe_item_id}
+                              />
+                            ) : (
+                              <div className="card-image-fallback">No image available</div>
+                            )}
+                          </div>
+
+                          <div className="inventory-card-body">
+                            <div className="inventory-card-copy">
+                              <p className="sku-label">{row.wardrobe_item_id}</p>
+                              <h2>{inventoryItem?.item_name || row.wardrobe_item_id}</h2>
+                              <div className="inventory-card-meta">
+                                <span>{inventoryItem?.category || "Wardrobe item"}</span>
+                                <span>{row.bag_assignment}</span>
+                              </div>
+                            </div>
+
+                            <div className="travel-item-status-row">
+                              <span className={`trip-status-pill status-${row.packing_status}`}>
+                                {formatPackingStatusLabel(row.packing_status)}
+                              </span>
+                            </div>
+
+                            <div className="travel-used-in">
+                              <span className="travel-used-in-label">Ready with:</span>
+                              {usedInOutfits.length === 0 ? (
+                                <span className="trip-meta-pill trip-meta-pill-muted">Manual item</span>
+                              ) : (
+                                usedInOutfits.map((outfit) => (
+                                  <span key={outfit.id} className="trip-meta-pill">
+                                    {outfit.title}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="travel-shell-grid">
+                  <article className="detail-card">
+                    <p className="eyebrow">Ready looks</p>
+                    <div className="travel-summary-look-list">
+                      {readyTravelLooks.length === 0 ? (
+                        <div className="travel-summary-look-row">
+                          <span>No fully ready looks yet</span>
+                          <strong>0</strong>
+                        </div>
+                      ) : (
+                        readyTravelLooks.map(({ outfit }) => (
+                          <div className="travel-summary-look-row" key={outfit.id}>
+                            <span>{outfit.title}</span>
+                            <strong>{outfit.item_ids.length} items ready</strong>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </article>
+
+                  <article className="detail-card">
+                    <p className="eyebrow">Partial looks</p>
+                    <div className="travel-summary-look-list">
+                      {partialTravelLooks.length === 0 ? (
+                        <div className="travel-summary-look-row">
+                          <span>Every selected look is currently ready</span>
+                          <strong>0</strong>
+                        </div>
+                      ) : (
+                        partialTravelLooks.map(({ outfit }) => (
+                          <div className="travel-summary-look-row" key={outfit.id}>
+                            <span>{outfit.title}</span>
+                            <strong>Needs review</strong>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </article>
+                </div>
+              </div>
+            ) : null}
           </section>
         </section>
       )}
@@ -2329,6 +3292,26 @@ function SummaryRing({
         <small>{helper || "Completion"}</small>
       </div>
     </div>
+  );
+}
+
+function TravelPackingImage({ src, alt }: { src: string; alt: string }) {
+  const [didFail, setDidFail] = useState(false);
+
+  if (didFail) {
+    return <div className="card-image-fallback">No image available</div>;
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="card-image"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setDidFail(true)}
+    />
   );
 }
 

@@ -1450,6 +1450,42 @@ button {
   gap: 1rem;
 }
 
+.travel-capsule-picker-card {
+  max-height: 56rem;
+  align-content: start;
+  overflow: hidden;
+}
+
+.travel-capsule-picker-grid {
+  max-height: 46rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+  align-content: start;
+  scrollbar-width: thin;
+}
+
+.travel-capsule-picker-grid::-webkit-scrollbar {
+  width: 8px;
+}
+
+.travel-capsule-picker-grid::-webkit-scrollbar-thumb {
+  background: rgba(125, 94, 66, 0.18);
+  border-radius: 999px;
+}
+
+.travel-capsule-picker-lookbook-card {
+  gap: 0.68rem;
+  padding: 0.72rem;
+}
+
+.travel-capsule-picker-lookbook-card .travel-lookbook-media {
+  aspect-ratio: 4 / 4.45;
+}
+
+.travel-capsule-picker-lookbook-card .travel-lookbook-body h3 {
+  font-size: 0.98rem;
+}
+
 .travel-look-category-create {
   display: flex;
   flex-wrap: wrap;
@@ -1584,6 +1620,9 @@ button {
 }
 
 .travel-lookbook-image {
+  width: 100%;
+  height: 100%;
+  display: block;
   object-fit: cover;
   transition: transform 260ms ease;
 }
@@ -1605,6 +1644,17 @@ button {
 
 .travel-packing-card {
   transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+@media (max-width: 900px) {
+  .travel-capsule-picker-card {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .travel-capsule-picker-grid {
+    max-height: 30rem;
+  }
 }
 
 .travel-item-status-row {
@@ -1724,6 +1774,294 @@ button {
   background: rgba(251, 248, 243, 0.9);
 }
 
+.trip-essentials-viewbar {
+  display: inline-flex;
+  gap: 0.3rem;
+  padding: 0.28rem;
+  border-radius: 999px;
+  background: rgba(241, 234, 225, 0.92);
+  align-self: flex-start;
+}
+
+.trip-essentials-viewchip {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  padding: 0.72rem 1.08rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.trip-essentials-viewchip.is-active {
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(36, 26, 16, 0.05);
+}
+
+.trip-essentials-viewcount {
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(180, 138, 99, 0.14);
+  color: var(--accent-deep);
+  font-size: 0.78rem;
+}
+
+.trip-essentials-groups {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.trip-essentials-category-card {
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(120, 109, 98, 0.14);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 38px rgba(36, 26, 16, 0.04);
+}
+
+.trip-essentials-category-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(120, 109, 98, 0.12);
+}
+
+.trip-essentials-category-copy h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-soft);
+}
+
+.trip-essentials-category-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.trip-essentials-category-count {
+  color: var(--muted-soft);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.trip-essentials-icon-button {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(245, 239, 232, 0.92);
+  color: var(--muted);
+  font: inherit;
+  display: inline-grid;
+  place-items: center;
+}
+
+.trip-essentials-addrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  gap: 0.7rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(120, 109, 98, 0.1);
+  background: rgba(250, 247, 242, 0.88);
+}
+
+.trip-essentials-addinput,
+.trip-essentials-edit-input,
+.trip-essentials-edit-notes {
+  width: 100%;
+  border: 1px solid rgba(120, 109, 98, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  font: inherit;
+  padding: 0.82rem 0.95rem;
+}
+
+.trip-essentials-edit-notes {
+  min-height: 3rem;
+  resize: vertical;
+  margin-top: 0.55rem;
+}
+
+.trip-essentials-inline-button {
+  border: 0;
+  border-radius: 16px;
+  background: rgba(244, 237, 228, 0.96);
+  color: var(--text);
+  font: inherit;
+  padding: 0.82rem 1rem;
+}
+
+.trip-essentials-inline-button.is-primary {
+  background: var(--text);
+  color: #fffdf9;
+}
+
+.trip-essentials-list {
+  display: grid;
+}
+
+.trip-essentials-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4rem;
+  padding: 0.6rem 1.35rem 0.6rem 1.2rem;
+  border-bottom: 1px solid rgba(120, 109, 98, 0.11);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.trip-essentials-row:last-child {
+  border-bottom: 0;
+}
+
+.trip-essentials-row.status-packed .trip-essentials-row-copy strong {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.trip-essentials-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.trip-essentials-check {
+  width: 1.8rem;
+  height: 1.8rem;
+  min-width: 1.8rem;
+  border-radius: 999px;
+  border: 2px solid rgba(120, 109, 98, 0.18);
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
+
+.trip-essentials-check span {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.trip-essentials-check.is-checked {
+  border-color: rgba(82, 107, 87, 0.22);
+  background: rgba(82, 107, 87, 0.08);
+}
+
+.trip-essentials-check.is-checked span {
+  background: var(--success);
+}
+
+.trip-essentials-shopping-dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  min-width: 0.9rem;
+  border-radius: 999px;
+  background: rgba(185, 145, 101, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(185, 145, 101, 0.28);
+}
+
+.trip-essentials-row-copy {
+  min-width: 0;
+}
+
+.trip-essentials-row-copy strong {
+  display: block;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.trip-essentials-row-copy small {
+  display: block;
+  margin-top: 0.14rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.trip-essentials-row-actions {
+  position: relative;
+  margin-left: auto;
+}
+
+.trip-essentials-menu-wrap {
+  position: relative;
+}
+
+.trip-essentials-menu-button {
+  border: 0;
+  background: transparent;
+  color: rgba(120, 109, 98, 0.6);
+  font-size: 1.75rem;
+  line-height: 1;
+  padding: 0.1rem 0.45rem 0.35rem;
+}
+
+.trip-essentials-menu {
+  position: absolute;
+  top: calc(100% - 0.15rem);
+  right: 0;
+  z-index: 20;
+  min-width: 12rem;
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.4rem;
+  border-radius: 18px;
+  border: 1px solid rgba(120, 109, 98, 0.12);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 36px rgba(36, 26, 16, 0.1);
+}
+
+.trip-essentials-menu-item {
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 0.75rem 0.82rem;
+}
+
+.trip-essentials-menu-item:hover {
+  background: rgba(245, 239, 232, 0.92);
+}
+
+.trip-essentials-menu-item.danger {
+  color: var(--danger);
+}
+
+.trip-essentials-reset {
+  width: 100%;
+  border: 0;
+  border-radius: 24px;
+  background: rgba(241, 234, 225, 0.82);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 1.45rem 1rem;
+}
+
+.trip-essentials-reset:hover {
+  background: rgba(236, 228, 218, 0.96);
+}
+
 .travel-inline-essential-editor {
   gap: 0.75rem;
   padding: 0.95rem;
@@ -1750,6 +2088,21 @@ button {
 .travel-manual-grid {
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 0.9rem;
+}
+
+.travel-manual-scroll {
+  max-height: 42rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.travel-manual-summary {
+  margin: 0.85rem 0 0.95rem;
+}
+
+.travel-manual-summary p {
+  margin: 0;
+  color: var(--muted);
 }
 
 .travel-manual-card {
@@ -2240,6 +2593,9 @@ button {
 }
 
 .card-image {
+  width: 100%;
+  height: 100%;
+  display: block;
   object-fit: cover;
   transition: transform 320ms ease;
 }
@@ -3027,6 +3383,20 @@ button {
   max-height: 66vh;
   overflow-y: auto;
   padding-right: 0.2rem;
+}
+
+.studio-browser-empty {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1.1rem;
+  border-radius: 22px;
+  border: 1px dashed rgba(120, 109, 98, 0.16);
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--muted);
+}
+
+.studio-browser-empty p {
+  margin: 0;
 }
 
 .studio-browser-card,

@@ -27,6 +27,7 @@ const defaultPickerFilters: InventoryFilters = {
   season: "",
   style_type: "",
   travel_friendly: "",
+  image_state: "",
 };
 
 const requiredStudioGroups = [
@@ -149,19 +150,26 @@ export function OutfitBuilderPanel({
     [inventoryItems],
   );
 
+  const hasPickerFilters = Boolean(pickerQuery.trim() || pickerCategory);
+
   const pickerItems = useMemo(
-    () =>
-      filterInventoryItems(
+    () => {
+      if (!hasPickerFilters) {
+        return [];
+      }
+
+      return filterInventoryItems(
         showUnavailableItems
           ? inventoryItems
           : inventoryItems.filter((item) => isInventoryItemAvailableForNewUse(item)),
         {
-        ...defaultPickerFilters,
-        query: pickerQuery,
-        category: pickerCategory,
-      },
-      ).slice(0, 140),
-    [inventoryItems, pickerCategory, pickerQuery, showUnavailableItems],
+          ...defaultPickerFilters,
+          query: pickerQuery,
+          category: pickerCategory,
+        },
+      ).slice(0, 140);
+    },
+    [hasPickerFilters, inventoryItems, pickerCategory, pickerQuery, showUnavailableItems],
   );
 
   const validatedDraftOutfit = useMemo(
@@ -523,53 +531,65 @@ export function OutfitBuilderPanel({
               </div>
             </div>
 
-            <div className="studio-browser-grid">
-              {pickerItems.map((item) => {
-                const imageUrl = getDisplayImage(item.image);
-                const isSelected = draft.item_ids.includes(item.item_id);
+            {!hasPickerFilters ? (
+              <div className="studio-browser-empty">
+                <p className="results-heading">Search to open the wardrobe</p>
+                <p>Type an item name, SKU, colour, or choose a category to load matching pieces.</p>
+              </div>
+            ) : pickerItems.length === 0 ? (
+              <div className="studio-browser-empty">
+                <p className="results-heading">No wardrobe matches found</p>
+                <p>Try another search term or clear one of the browser filters.</p>
+              </div>
+            ) : (
+              <div className="studio-browser-grid">
+                {pickerItems.map((item) => {
+                  const imageUrl = getDisplayImage(item.image);
+                  const isSelected = draft.item_ids.includes(item.item_id);
 
-                return (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={`studio-browser-card ${isSelected ? "is-selected" : ""} ${
-                      replacementTargetItemId ? "is-replace-mode" : ""
-                    } ${
-                      isUnavailableInventoryStatus(item.status) ? "is-unavailable" : ""
-                    }`}
-                    onClick={() => (isSelected ? removeItem(item.item_id) : addItem(item.item_id))}
-                    draggable
-                    onDragStart={() => {
-                      setDraggedBrowserItemId(item.item_id);
-                      setDraggedBoardItemId(null);
-                    }}
-                    onDragEnd={() => setDraggedBrowserItemId(null)}
-                  >
-                    <div className="studio-browser-image-wrap">
-                      {imageUrl ? (
-                        <Image
-                          src={imageUrl}
-                          alt={item.item_name || item.item_id}
-                          fill
-                          className="studio-browser-image"
-                          sizes="(max-width: 900px) 33vw, 180px"
-                        />
-                      ) : (
-                        <div className="studio-browser-placeholder">No image</div>
-                      )}
-                    </div>
-                    <div className="studio-browser-copy">
-                      <p className="sku-label">{item.item_id}</p>
-                      <h3>{item.item_name || item.item_id}</h3>
-                      <p>{item.category || "Uncategorised"}</p>
-                      {isUnavailableInventoryStatus(item.status) ? (
-                        <p className="studio-unavailable-copy">{item.status}</p>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={`studio-browser-card ${isSelected ? "is-selected" : ""} ${
+                        replacementTargetItemId ? "is-replace-mode" : ""
+                      } ${
+                        isUnavailableInventoryStatus(item.status) ? "is-unavailable" : ""
+                      }`}
+                      onClick={() => (isSelected ? removeItem(item.item_id) : addItem(item.item_id))}
+                      draggable
+                      onDragStart={() => {
+                        setDraggedBrowserItemId(item.item_id);
+                        setDraggedBoardItemId(null);
+                      }}
+                      onDragEnd={() => setDraggedBrowserItemId(null)}
+                    >
+                      <div className="studio-browser-image-wrap">
+                        {imageUrl ? (
+                          <Image
+                            src={imageUrl}
+                            alt={item.item_name || item.item_id}
+                            fill
+                            className="studio-browser-image"
+                            sizes="(max-width: 900px) 33vw, 180px"
+                          />
+                        ) : (
+                          <div className="studio-browser-placeholder">No image</div>
+                        )}
+                      </div>
+                      <div className="studio-browser-copy">
+                        <p className="sku-label">{item.item_id}</p>
+                        <h3>{item.item_name || item.item_id}</h3>
+                        <p>{item.category || "Uncategorised"}</p>
+                        {isUnavailableInventoryStatus(item.status) ? (
+                          <p className="studio-unavailable-copy">{item.status}</p>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section
